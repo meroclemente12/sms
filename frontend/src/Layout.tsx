@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from './auth'
 
@@ -9,12 +10,45 @@ const SETUP_LINKS = [
   { to: '/setup/channels', label: 'Booking channels' },
 ]
 
+const NAV_KEY = 'banahaw.sidebar'
+
+function readSidebar(): boolean {
+  try {
+    return localStorage.getItem(NAV_KEY) !== 'hidden'
+  } catch {
+    return true
+  }
+}
+
 export default function Layout() {
-  const { me, branch, setBranchId, logout, isAdmin } = useAuth()
+  const { me, branch, setBranchId, logout, isAdmin, canManage } = useAuth()
+  const [navOpen, setNavOpen] = useState(readSidebar)
   if (!me) return null
+
+  function toggleNav() {
+    setNavOpen((open) => {
+      try {
+        localStorage.setItem(NAV_KEY, open ? 'hidden' : 'shown')
+      } catch {
+        // Blocked storage: the choice just won't be remembered.
+      }
+      return !open
+    })
+  }
+
   return (
     <div className="app">
       <header className="topbar">
+        <button
+          className="nav-toggle"
+          onClick={toggleNav}
+          aria-expanded={navOpen}
+          aria-controls="sidenav"
+          aria-label={navOpen ? 'Hide menu' : 'Show menu'}
+          title={navOpen ? 'Hide menu' : 'Show menu'}
+        >
+          <span aria-hidden="true">☰</span>
+        </button>
         <div className="brand">
           <strong>{me.tenant_name}</strong>
           <span className="muted">Front desk</span>
@@ -41,18 +75,22 @@ export default function Layout() {
         </div>
       </header>
       <div className="body">
-        <nav className="sidenav" aria-label="Sections">
+        <nav id="sidenav" className="sidenav" aria-label="Sections" hidden={!navOpen}>
           <NavLink to="/" end>
             Day board
           </NavLink>
           <NavLink to="/clients">Clients</NavLink>
-          <p className="nav-group">Setup</p>
-          {SETUP_LINKS.map((l) => (
-            <NavLink key={l.to} to={l.to}>
-              {l.label}
-            </NavLink>
-          ))}
-          {isAdmin && <NavLink to="/setup/staff">Staff accounts</NavLink>}
+          {canManage && (
+            <>
+              <p className="nav-group">Setup</p>
+              {SETUP_LINKS.map((l) => (
+                <NavLink key={l.to} to={l.to}>
+                  {l.label}
+                </NavLink>
+              ))}
+              {isAdmin && <NavLink to="/setup/staff">Staff accounts</NavLink>}
+            </>
+          )}
         </nav>
         <main className="content">
           <Outlet />
