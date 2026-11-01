@@ -24,7 +24,38 @@ Each booking item stores the time it blocks (service plus cleanup buffer) as a
 `tstzrange`. PostgreSQL exclusion constraints refuse any two active items that overlap
 on the same therapist or the same bed, so two desks clicking at once cannot both win.
 
-## Run locally
+## Try it with Docker (easiest)
+
+You only need [Docker Desktop](https://www.docker.com/products/docker-desktop/).
+
+```bash
+docker compose up --build
+```
+
+The first run takes a few minutes. When the log says `Uvicorn running`, open
+http://localhost:8080 and sign in:
+
+| Spa code | Email | Password | Role |
+| --- | --- | --- | --- |
+| `banahaw` | `owner@banahaw.ph` | `banahaw-demo` | Admin |
+| `banahaw` | `manager@banahaw.ph` | `banahaw-demo` | Manager |
+| `banahaw` | `desk@banahaw.ph` | `banahaw-demo` | Front desk |
+
+The demo spa has one branch (Main) with four single rooms, a couples suite and a foot
+spa lounge, a sample service menu, and six therapists with shifts for the next two weeks.
+The API and its docs are at http://localhost:8000/docs.
+
+- Stop: `Ctrl+C`, or `docker compose down` if you started it with `-d`.
+- Start over with an empty database: `docker compose down -v`, then `up --build` again.
+- After pulling new code, run `docker compose up --build` again. Your data is kept.
+- If port 5432, 8000 or 8080 is already in use on your computer, change the left-hand
+  number under `ports:` in `docker-compose.yml` (for 8000, also update `VITE_API_URL`
+  and `CORS_ORIGINS`).
+
+The Docker setup is for trying the app on your own computer only. Its passwords and
+signing secret are public, so never use it for real client data.
+
+## Run locally for development
 
 ```bash
 docker compose up -d db

@@ -1,3 +1,8 @@
+# Run the whole app locally:
+#   docker compose up --build
+# Then open http://localhost:8080 (spa code: banahaw, password: banahaw-demo).
+# API docs: http://localhost:8000/docs
+
 services:
   db:
     image: postgres:16
@@ -7,5 +12,39 @@ services:
       POSTGRES_DB: banahaw
     ports: ["5432:5432"]
     volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U banahaw -d banahaw"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg://banahaw:banahaw@db:5432/banahaw
+      JWT_SECRET: local-docker-only-not-for-production-0123456789
+      CORS_ORIGINS: http://localhost:8080,http://localhost:5173
+      # Loads a sample spa on first start; set to "false" to start empty.
+      SEED_DEMO: "true"
+    ports: ["8000:8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  web:
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: http://localhost:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports: ["8080:80"]
+
 volumes:
   pgdata:
