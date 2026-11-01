@@ -33,6 +33,7 @@ from app.models import (
     UserBranch,
     UserRole,
 )
+from app.payments import add_default_methods
 from app.scheduling import GuestRequest, GuestWish, create_booking, pick_pairs
 from app.security import hash_password
 
@@ -73,6 +74,8 @@ def seed_demo(password: str = DEMO_PASSWORD) -> bool:
 
         main = Branch(tenant_id=tid, name="Main", address="Lucena City, Quezon", timezone=TZ)
         session.add(main)
+        session.flush()
+        add_default_methods(session, main)
         bed_types = {n: BedType(tenant_id=tid, name=n) for n in ("Massage bed", "Foot spa chair")}
         session.add_all(bed_types.values())
         session.flush()
@@ -153,6 +156,7 @@ def seed_demo(password: str = DEMO_PASSWORD) -> bool:
         for email, name, role in [
             ("manager@banahaw.ph", "Maria Manager", UserRole.manager),
             ("desk@banahaw.ph", "Dana Desk", UserRole.front_desk),
+            ("accounts@banahaw.ph", "Alma Accountant", UserRole.accountant),
         ]:
             u = User(
                 tenant_id=tid,

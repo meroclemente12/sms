@@ -88,6 +88,22 @@ class UserRole(enum.StrEnum):
     front_desk = "front_desk"
     manager = "manager"
     admin = "admin"
+    # Checks cashless payments the front desk logged; cannot book or change setup.
+    accountant = "accountant"
+
+
+class PaymentKind(enum.StrEnum):
+    cash = "cash"
+    cashless = "cashless"
+
+
+class PaymentStatus(enum.StrEnum):
+    """Where a payment is in the accountant's check. Cash is not checked."""
+
+    not_needed = "not_needed"
+    pending = "pending"
+    verified = "verified"
+    flagged = "flagged"
 
 
 def _enum_check(column: str, values: type[enum.StrEnum]) -> CheckConstraint:
@@ -397,6 +413,58 @@ class BookingEvent(Base):
     occurred_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), default=func.clock_timestamp()
     )
+
+
+# --- Payments ------------------------------------------------------------------------
+
+
+class PaymentMethod(TimestampMixin, Base):
+    """How a guest can pay at one branch: Cash, GCash, BPI transfer, card..."""
+
+    __tablename__ = "payment_methods"
+    __table_args__ = (UniqueConstraint("branch_id", "name"), _enum_check("kind", PaymentKind))
+
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = _tenant_fk()
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("branches.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(20), default=PaymentKind.cashless)
+    # Ask the desk for the transaction / reference number when this method is used.
+    needs_reference: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class Payment(TimestampMixin, Base):
+    """Money received for a booking, logged by the desk and (if cashless) checked later."""
+
+    __tablename__ = "payments"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="payment_positive"),
+        _enum_check("status", PaymentStatus),
+    )
+
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = _tenant_fk()
+    branch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("branches.id"), index=True)
+    booking_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("bookings.id", ondelete="CASCADE"), index=True
+    )
+    method_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("payment_methods.id"))
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    reference: Mapped[str | None] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20), default=PaymentStatus.pending)
+    recorded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), default=func.clock_timestamp()
+    )
+    checked_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    check_note: Mapped[str | None] = mapped_column(Text)
+
+    method: Mapped[PaymentMethod] = relationship()
 
 
 # --- Access --------------------------------------------------------------------------
