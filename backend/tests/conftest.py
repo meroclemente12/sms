@@ -32,18 +32,9 @@ def engine():
     eng = create_engine(TEST_URL)
     with eng.begin() as conn:
         conn.execute(text("DROP SCHEMA public CASCADE; CREATE SCHEMA public"))
-        conn.execute(
-            text(
-                "DO $$ BEGIN IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_user') "
-                "THEN CREATE ROLE app_user; END IF; END $$"
-            )
-        )
     cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
     cfg.set_main_option("script_location", os.path.join(os.path.dirname(__file__), "..", "alembic"))
     command.upgrade(cfg, "head")
-    with eng.begin() as conn:
-        conn.execute(text("GRANT USAGE ON SCHEMA public TO app_user"))
-        conn.execute(text("GRANT ALL ON ALL TABLES IN SCHEMA public TO app_user"))
     yield eng
     eng.dispose()
 
@@ -77,7 +68,7 @@ class Spa:
 
 
 def make_spa(s: Session, name: str = "Banahaw Heals") -> Spa:
-    t = m.Tenant(name=name)
+    t = m.Tenant(name=name, slug=name.lower().replace(" ", "-"))
     s.add(t)
     s.flush()
     tid = t.id

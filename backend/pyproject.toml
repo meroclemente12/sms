@@ -10,6 +10,8 @@ dependencies = [
   "alembic>=1.13",
   "psycopg[binary]>=3.2",
   "pydantic-settings>=2.3",
+  "argon2-cffi>=25.1.0",
+  "pyjwt>=2.15.1",
 ]
 
 [dependency-groups]
