@@ -6,6 +6,10 @@ Create a spa (tenant) with its first admin and the default booking channels:
         --admin-email owner@example.com --admin-name "Owner"
 
 The password is asked for interactively (or read from ADMIN_PASSWORD).
+
+Load a sample spa to try the app (does nothing if it already exists):
+
+    uv run python -m app.cli seed-demo
 """
 
 from __future__ import annotations
@@ -60,7 +64,19 @@ def main(argv: list[str] | None = None) -> int:
     ct.add_argument("--slug", required=True, help="Sign-in code, e.g. banahaw")
     ct.add_argument("--admin-email", required=True)
     ct.add_argument("--admin-name", default="Admin")
+    sub.add_parser("seed-demo", help="Load a sample spa to try the app")
     args = parser.parse_args(argv)
+
+    if args.cmd == "seed-demo":
+        from app.demo import DEMO_PASSWORD, DEMO_SLUG, seed_demo
+
+        password = os.environ.get("DEMO_PASSWORD") or DEMO_PASSWORD
+        if seed_demo(password):
+            print(f"Demo spa created. Sign in with spa code '{DEMO_SLUG}', password '{password}':")
+            print("  owner@banahaw.ph (admin), manager@banahaw.ph, desk@banahaw.ph")
+        else:
+            print(f"Demo spa '{DEMO_SLUG}' already exists, nothing to do.")
+        return 0
 
     password = os.environ.get("ADMIN_PASSWORD") or getpass.getpass("Admin password: ")
     try:
