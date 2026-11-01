@@ -47,3 +47,9 @@ def test_demo_spa_is_ready_to_book(demo):
         headers=h,
     ).json()
     assert pairs, "tomorrow afternoon should have a free therapist and bed"
+
+    today = datetime.now(ZoneInfo("Asia/Manila")).date()
+    board = demo.get(
+        f"/branches/{branch_id}/board", params={"date": today.isoformat()}, headers=h
+    ).json()
+    assert len(board["items"]) == 5  # four sample bookings, one of them for a couple

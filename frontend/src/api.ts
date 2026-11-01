@@ -197,3 +197,166 @@ export interface StaffUser {
   active: boolean
   branch_ids: string[]
 }
+
+// --- Front desk ------------------------------------------------------------------------
+
+export type BookingStatus = 'booked' | 'confirmed' | 'checked_in' | 'in_service' | 'completed' | 'cancelled' | 'no_show'
+
+export const STATUS_LABEL: Record<BookingStatus, string> = {
+  booked: 'Booked',
+  confirmed: 'Confirmed',
+  checked_in: 'Checked in',
+  in_service: 'In service',
+  completed: 'Completed',
+  cancelled: 'Cancelled',
+  no_show: 'No-show',
+}
+
+export type PreferredGender = 'female' | 'male'
+
+export interface Client {
+  id: string
+  name: string
+  mobile: string | null
+  email: string | null
+  gender: Gender | null
+  notes: string | null
+  allergies: string | null
+}
+
+export interface Visit {
+  booking_id: string
+  branch_name: string
+  starts_at: string
+  service_name: string
+  variant_label: string
+  therapist_name: string
+  status: BookingStatus
+  price: string
+}
+
+export interface ClientDetail extends Client {
+  visits: Visit[]
+}
+
+export interface PairRef {
+  therapist_id: string
+  bed_id: string
+  room_id: string
+}
+
+export interface Slot {
+  starts_at: string
+  pairs: PairRef[]
+}
+
+export interface GuestWish {
+  therapist_id?: string | null
+  preferred_gender?: PreferredGender | null
+  bed_id?: string | null
+}
+
+export interface BookingItem {
+  id: string
+  therapist_id: string
+  therapist_name: string
+  bed_id: string
+  bed_label: string
+  room_id: string
+  room_name: string
+  guest_name: string | null
+  starts_at: string
+  ends_at: string
+  blocked_until: string
+  price: string
+  therapist_requested: boolean
+  preferred_gender: PreferredGender | null
+}
+
+export interface BookingEvent {
+  event_type: string
+  payload: Record<string, unknown>
+  user_name: string | null
+  occurred_at: string
+}
+
+export interface Booking {
+  id: string
+  branch_id: string
+  status: BookingStatus
+  client: Pick<Client, 'id' | 'name' | 'mobile' | 'notes' | 'allergies'>
+  channel_id: string
+  channel_name: string
+  service_id: string
+  service_name: string
+  variant_id: string
+  variant_label: string
+  guest_count: number
+  starts_at: string
+  ends_at: string
+  total: string
+  notes: string | null
+  amount_paid: string | null
+  cancel_reason: string | null
+  created_at: string
+  items: BookingItem[]
+  events: BookingEvent[]
+}
+
+export interface Span {
+  starts_at: string
+  ends_at: string
+}
+
+export interface BoardTherapist {
+  id: string
+  name: string
+  gender: Gender
+  colour: string | null
+  shifts: Span[]
+}
+
+export interface BoardBed {
+  id: string
+  label: string
+  room_id: string
+  room_name: string
+  room_type: RoomType
+}
+
+export interface BoardBlock extends Span {
+  id: string
+  therapist_id: string | null
+  bed_id: string | null
+  reason: BlockReason
+}
+
+export interface BoardItem extends Span {
+  id: string
+  booking_id: string
+  therapist_id: string
+  bed_id: string
+  blocked_from: string
+  blocked_until: string
+  status: BookingStatus
+  client_name: string
+  guest_name: string | null
+  service_name: string
+  variant_label: string
+  channel_name: string
+  therapist_requested: boolean
+  preferred_gender: PreferredGender | null
+  guest_count: number
+  has_notes: boolean
+}
+
+export interface Board {
+  date: string
+  timezone: string
+  opens_at: string
+  closes_at: string
+  therapists: BoardTherapist[]
+  beds: BoardBed[]
+  blocks: BoardBlock[]
+  items: BoardItem[]
+}

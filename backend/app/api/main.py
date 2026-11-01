@@ -3,10 +3,10 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, bookings, setup
+from app.api import auth, bookings, clients, setup
 from app.config import settings
 
-app = FastAPI(title="Banahaw Reservations API", version="0.2.0")
+app = FastAPI(title="Banahaw Reservations API", version="0.3.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",") if o.strip()],
@@ -23,3 +23,4 @@ def health() -> dict[str, str]:
 app.include_router(auth.router)
 app.include_router(setup.router)
 app.include_router(bookings.router)
+app.include_router(clients.router)

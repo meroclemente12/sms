@@ -443,3 +443,213 @@ def test_phone_booking_needs_branch_access_and_conflict_is_refused(world):
         world.client.post(f"/bookings/{booking_id}/status/cancelled", headers=other).status_code
         == 404
     )
+
+
+def ts(value: str) -> datetime:
+    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+
+
+def _book(world, h, **over) -> dict:
+    a = world.a
+    body = {
+        "branch_id": str(a.branch.id),
+        "client_id": str(a.client.id),
+        "channel_id": str(a.phone.id),
+        "variant_id": str(a.swedish60.id),
+        "starts_at": at(10).isoformat(),
+        "guests": [{}],
+        **over,
+    }
+    r = world.client.post("/bookings", json=body, headers=h)
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
+def test_booking_detail_edit_and_history(world):
+    a = world.a
+    h = world.login("desk@banahaw.ph")
+    b = _book(
+        world,
+        h,
+        guests=[{"therapist_id": str(a.ana.id), "therapist_requested": True}],
+        notes="Likes firm pressure",
+    )
+    assert b["client"]["name"] == "Maria Santos"
+    assert b["channel_name"] == "Phone call"
+    assert b["service_name"] == "Swedish massage" and b["total"] == "800.00"
+    assert b["items"][0]["therapist_name"] == "Ana" and b["items"][0]["therapist_requested"]
+
+    r = world.client.patch(
+        f"/bookings/{b['id']}", json={"notes": "Firm", "channel_id": str(a.walk_in.id)}, headers=h
+    )
+    assert r.status_code == 200, r.text
+    assert r.json()["notes"] == "Firm" and r.json()["channel_name"] == "Walk-in"
+
+    detail = world.client.get(f"/bookings/{b['id']}", headers=h).json()
+    assert [e["event_type"] for e in detail["events"]] == ["booking.created", "booking.edited"]
+    assert detail["events"][0]["user_name"] == "Desk"
+
+    other = world.login("owner@other.ph", spa="other-spa")
+    assert world.client.get(f"/bookings/{b['id']}", headers=other).status_code == 404
+    # Another spa's client or channel cannot be attached to this booking.
+    r = world.client.patch(
+        f"/bookings/{b['id']}", json={"client_id": str(world.b.client.id)}, headers=h
+    )
+    assert r.status_code == 422
+
+
+def test_slots_and_walk_in_check_in(world):
+    a = world.a
+    h = world.login("desk@banahaw.ph")
+    body = {"variant_id": str(a.swedish60.id), "date": "2026-11-02", "guests": [{}], "limit": 3}
+    r = world.client.post(f"/branches/{a.branch.id}/slots", json=body, headers=h)
+    assert r.status_code == 200, r.text
+    # The shifts start at 9:00, which is when the branch opens.
+    assert [ts(s["starts_at"]) for s in r.json()] == [at(9), at(9, 15), at(9, 30)]
+    body = {
+        "variant_id": str(a.couples60.id),
+        "after": at(13, 5).isoformat(),
+        "guests": [{"preferred_gender": "female"}, {"preferred_gender": "male"}],
+        "limit": 1,
+    }
+    r = world.client.post(f"/branches/{a.branch.id}/slots", json=body, headers=h)
+    (slot,) = r.json()
+    assert ts(slot["starts_at"]) == at(13, 15)
+    assert {p["therapist_id"] for p in slot["pairs"]} <= {
+        str(a.ana.id),
+        str(a.cora.id),
+        str(a.ben.id),
+    }
+
+    walk = _book(
+        world,
+        h,
+        channel_id=str(a.walk_in.id),
+        starts_at=at(13, 15).isoformat(),
+        check_in_now=True,
+    )
+    assert walk["status"] == "checked_in"
+
+
+def test_reschedule_cancel_and_checkout_over_the_api(world):
+    a = world.a
+    h = world.login("desk@banahaw.ph")
+    b = _book(world, h, guests=[{"therapist_id": str(a.ana.id)}])
+    _book(world, h, starts_at=at(15).isoformat(), guests=[{"therapist_id": str(a.ben.id)}])
+
+    # Ben is busy at 15:00, so moving there with Ben is refused...
+    r = world.client.post(
+        f"/bookings/{b['id']}/reschedule",
+        json={"starts_at": at(15).isoformat(), "guests": [{"therapist_id": str(a.ben.id)}]},
+        headers=h,
+    )
+    assert r.status_code == 422
+    # ...and the slots search for this booking treats its own 10:00 slot as free.
+    r = world.client.post(
+        f"/branches/{a.branch.id}/slots",
+        json={
+            "variant_id": str(a.swedish60.id),
+            "after": at(10).isoformat(),
+            "guests": [{"therapist_id": str(a.ana.id)}],
+            "exclude_booking_id": b["id"],
+            "limit": 1,
+        },
+        headers=h,
+    )
+    assert ts(r.json()[0]["starts_at"]) == at(10)
+
+    r = world.client.post(
+        f"/bookings/{b['id']}/reschedule", json={"starts_at": at(11).isoformat()}, headers=h
+    )
+    assert r.status_code == 200, r.text
+    moved = r.json()
+    assert ts(moved["starts_at"]) == at(11)
+    assert moved["items"][0]["therapist_id"] == str(a.ana.id)
+
+    for to in ("confirmed", "checked_in", "in_service"):
+        assert world.client.post(f"/bookings/{b['id']}/status/{to}", headers=h).status_code == 200
+    r = world.client.post(
+        f"/bookings/{b['id']}/status/completed", json={"amount_paid": "850"}, headers=h
+    )
+    assert r.status_code == 200 and r.json()["amount_paid"] == "850"
+    assert r.json()["events"][-1]["payload"]["amount_paid"] == "850"
+
+    c = _book(world, h, starts_at=at(16).isoformat())
+    r = world.client.post(
+        f"/bookings/{c['id']}/status/cancelled", json={"reason": "Sick"}, headers=h
+    )
+    assert r.json()["status"] == "cancelled" and r.json()["cancel_reason"] == "Sick"
+
+
+def test_day_board(world):
+    a = world.a
+    h = world.login("desk@banahaw.ph")
+    b = _book(world, h, guests=[{"therapist_id": str(a.ana.id)}])
+    gone = _book(world, h, starts_at=at(12).isoformat())
+    world.client.post(f"/bookings/{gone['id']}/status/cancelled", headers=h)
+
+    r = world.client.get(f"/branches/{a.branch.id}/board", params={"date": "2026-11-02"}, headers=h)
+    assert r.status_code == 200, r.text
+    board = r.json()
+    assert [t["name"] for t in board["therapists"]] == ["Ana", "Ben", "Cora"]
+    assert ts(board["therapists"][0]["shifts"][0]["starts_at"]) == at(9)
+    assert len(board["beds"]) == 4
+    (item,) = board["items"]
+    assert item["booking_id"] == b["id"] and item["client_name"] == "Maria Santos"
+    assert ts(item["blocked_until"]) == at(11, 20)
+
+    r = world.client.get(
+        f"/branches/{a.branch.id}/board",
+        params={"date": "2026-11-02", "include_cancelled": True},
+        headers=h,
+    )
+    assert len(r.json()["items"]) == 2
+    r = world.client.get(f"/branches/{a.branch.id}/board", params={"date": "2026-11-03"}, headers=h)
+    assert r.json()["items"] == [] and r.json()["therapists"][0]["shifts"] == []
+    north = world.login("north.mgr@banahaw.ph")
+    assert (
+        world.client.get(
+            f"/branches/{a.branch.id}/board", params={"date": "2026-11-02"}, headers=north
+        ).status_code
+        == 403
+    )
+
+
+# --- Clients ---------------------------------------------------------------------------
+
+
+def test_client_search_create_and_history(world):
+    a = world.a
+    h = world.login("desk@banahaw.ph")
+    # Maria's mobile is +639170000000; people type it many ways.
+    for q in ("maria", "0917 000", "+63917000", "9170000000"):
+        names = [c["name"] for c in world.client.get("/clients", params={"q": q}, headers=h).json()]
+        assert names == ["Maria Santos"], q
+
+    r = world.client.post(
+        "/clients", json={"name": "Duplicate", "mobile": "0917-000-0000"}, headers=h
+    )
+    assert r.status_code == 409 and "Maria Santos" in r.json()["detail"]
+    r = world.client.post(
+        "/clients",
+        json={"name": " Jun Cruz ", "mobile": "0918 555 1234", "allergies": "Peanut oil"},
+        headers=h,
+    )
+    assert r.status_code == 201, r.text
+    jun = r.json()
+    assert jun["name"] == "Jun Cruz"
+    r = world.client.put(
+        f"/clients/{jun['id']}",
+        json={"name": "Jun Cruz", "mobile": "09185551234", "notes": "Prefers male therapist"},
+        headers=h,
+    )
+    assert r.status_code == 200 and r.json()["notes"] == "Prefers male therapist"
+
+    _book(world, h, client_id=jun["id"], guests=[{"therapist_id": str(a.ben.id)}])
+    detail = world.client.get(f"/clients/{jun['id']}", headers=h).json()
+    (visit,) = detail["visits"]
+    assert visit["therapist_name"] == "Ben" and visit["branch_name"] == "Main"
+
+    other = world.login("owner@other.ph", spa="other-spa")
+    assert world.client.get(f"/clients/{jun['id']}", headers=other).status_code == 404
+    assert world.client.get("/clients", params={"q": "jun"}, headers=other).json() == []

@@ -14,9 +14,12 @@ from sqlalchemy import select
 
 from app.cli import create_tenant
 from app.db import SessionLocal, set_tenant
+from app.lifecycle import transition
 from app.models import (
     Bed,
     BedType,
+    BookingChannel,
+    BookingStatus,
     Branch,
     Client,
     Room,
@@ -30,6 +33,7 @@ from app.models import (
     UserBranch,
     UserRole,
 )
+from app.scheduling import GuestRequest, GuestWish, create_booking, pick_pairs
 from app.security import hash_password
 
 DEMO_SLUG = "banahaw"
@@ -167,4 +171,53 @@ def seed_demo(password: str = DEMO_PASSWORD) -> bool:
                 Client(tenant_id=tid, name="Paolo Reyes", mobile="+639181234567"),
             ]
         )
+    _sample_bookings(tenant.id, tz)
     return True
+
+
+# day offset, hh:mm, client, service, variant, channel, therapist (or None), status
+SAMPLE_BOOKINGS = [
+    (0, "10:00", "Liza Santos", "Swedish massage", "60 min", "phone", "Ana", "confirmed"),
+    (0, "10:30", "Paolo Reyes", "Hilot", "90 min", "walk_in", None, "booked"),
+    (0, "11:00", "Liza Santos", "Couples massage", "60 min", "email", None, "booked"),
+    (0, "13:00", "Paolo Reyes", "Foot spa", "45 min", "phone", "Carla", "booked"),
+    (1, "10:00", "Paolo Reyes", "Swedish massage", "90 min", "phone", "Dante", "booked"),
+]
+
+
+def _sample_bookings(tenant_id, tz: ZoneInfo) -> None:
+    """A few bookings today and tomorrow so the day board is not empty."""
+    with SessionLocal() as session, session.begin():
+        set_tenant(session, tenant_id)
+        branch = session.scalar(select(Branch))
+        clients = {c.name: c for c in session.scalars(select(Client))}
+        channels = {c.code: c for c in session.scalars(select(BookingChannel))}
+        therapists = {t.name: t for t in session.scalars(select(Therapist))}
+        variants = {(v.service.name, v.label): v for v in session.scalars(select(ServiceVariant))}
+        today = datetime.now(tz).date()
+        for offset, hhmm, client, service, label, channel, therapist, status in SAMPLE_BOOKINGS:
+            day = today + timedelta(days=offset)
+            starts = datetime.combine(day, time.fromisoformat(hhmm), tzinfo=tz)
+            variant = variants[(service, label)]
+            wish = GuestWish(therapist_id=therapists[therapist].id if therapist else None)
+            wishes = [wish] * variant.service.guest_count
+            pairs = pick_pairs(session, branch.id, variant.id, starts, wishes)
+            booking = create_booking(
+                session,
+                tenant_id=tenant_id,
+                branch_id=branch.id,
+                client_id=clients[client].id,
+                channel_id=channels[channel].id,
+                variant_id=variant.id,
+                starts_at=starts,
+                guests=[
+                    GuestRequest(
+                        pair=p,
+                        guest_name="Guest" if i else None,
+                        therapist_requested=therapist is not None,
+                    )
+                    for i, p in enumerate(pairs)
+                ],
+            )
+            if status != BookingStatus.booked:
+                transition(session, booking, BookingStatus(status))

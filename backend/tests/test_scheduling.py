@@ -7,12 +7,16 @@ from app import models as m
 from app.lifecycle import InvalidTransition, transition
 from app.scheduling import (
     GuestRequest,
+    GuestWish,
     NotAvailable,
     Pair,
     SlotTaken,
     create_booking,
     find_couples,
     find_pairs,
+    find_slots,
+    pick_pairs,
+    reschedule,
 )
 from tests.conftest import at, make_spa
 
@@ -217,3 +221,138 @@ def test_row_level_security_isolates_tenants(session, spa):
     assert names == {"Banahaw Heals"}
     assert therapist_tenants == {spa.tenant.id}
     assert other.tenant.id not in therapist_tenants
+
+
+# --- Picking, free times and moving ----------------------------------------------------
+
+
+def test_find_slots_skips_taken_times_and_respects_closing(session, spa):
+    # Ana and Ben are the only Swedish therapists; book both at 10:00.
+    p = find_pairs(session, spa.branch.id, spa.swedish60.id, at(10))
+    book(session, spa, p[0], at(10))
+    p = find_pairs(session, spa.branch.id, spa.swedish60.id, at(10))
+    book(session, spa, p[0], at(10))
+    slots = find_slots(
+        session, spa.branch.id, spa.swedish60.id, [GuestWish()], after=at(9, 50), until=at(12)
+    )
+    starts = [s.starts_at for s in slots]
+    # 10:00–10:45 are taken (therapists busy until 11:00); 11:00 is the first free start,
+    # and nothing that would run past 12:00 is offered.
+    assert starts == [at(11)]
+
+
+def test_find_slots_for_a_requested_therapist(session, spa):
+    p = find_pairs(session, spa.branch.id, spa.swedish60.id, at(10), therapist_id=spa.ana.id)
+    book(session, spa, p[0], at(10))
+    slots = find_slots(
+        session,
+        spa.branch.id,
+        spa.swedish60.id,
+        [GuestWish(therapist_id=spa.ana.id)],
+        after=at(10),
+        until=at(13),
+        limit=2,
+    )
+    assert [s.starts_at for s in slots] == [at(11), at(11, 15)]
+    assert all(s.pairs[0].therapist_id == spa.ana.id for s in slots)
+
+
+def test_pick_pairs_couples_needs_two_wishes(session, spa):
+    pairs = pick_pairs(session, spa.branch.id, spa.couples60.id, at(10), [GuestWish(), GuestWish()])
+    assert len(pairs) == 2 and pairs[0].room_id == pairs[1].room_id
+    with pytest.raises(ValueError):
+        pick_pairs(session, spa.branch.id, spa.couples60.id, at(10), [GuestWish()])
+
+
+def test_reschedule_keeps_therapist_and_bed_when_free(session, spa):
+    pair = Pair(spa.ana.id, spa.bed_b.id, spa.bed_b.room_id)
+    b = book(session, spa, pair, at(10))
+    reschedule(session, b, starts_at=at(10, 30))
+    item = b.items[0]
+    assert (item.therapist_id, item.bed_id, item.starts_at) == (
+        spa.ana.id,
+        spa.bed_b.id,
+        at(10, 30),
+    )
+    assert item.status == "booked"
+    events = session.scalars(
+        select(m.BookingEvent.event_type).where(m.BookingEvent.booking_id == b.id)
+    ).all()
+    assert "booking.rescheduled" in events
+
+
+def test_reschedule_to_a_taken_therapist_is_refused_and_changes_nothing(session, spa):
+    mine = book(session, spa, Pair(spa.ana.id, spa.bed_a.id, spa.bed_a.room_id), at(10))
+    book(session, spa, Pair(spa.ben.id, spa.bed_b.id, spa.bed_b.room_id), at(12))
+    with pytest.raises(NotAvailable):
+        reschedule(session, mine, starts_at=at(12), wishes=[GuestWish(therapist_id=spa.ben.id)])
+    item = mine.items[0]
+    assert (item.therapist_id, item.starts_at, item.status) == (spa.ana.id, at(10), "booked")
+
+
+def test_reschedule_can_change_length_and_reprices(session, spa):
+    sw90 = m.ServiceVariant(
+        tenant_id=spa.tenant.id,
+        service_id=spa.swedish60.service_id,
+        label="90 min",
+        duration_min=90,
+        default_price=Decimal("1100"),
+    )
+    session.add(sw90)
+    session.flush()
+    b = book(session, spa, Pair(spa.ana.id, spa.bed_a.id, spa.bed_a.room_id), at(10))
+    reschedule(session, b, starts_at=at(10), variant_id=sw90.id)
+    assert b.items[0].ends_at == at(11, 30) and b.items[0].price == Decimal("1100")
+
+
+def test_reschedule_moves_both_couples_guests_together(session, spa):
+    pairs = find_couples(session, spa.branch.id, spa.couples60.id, at(10))
+    b = book(
+        session,
+        spa,
+        None,
+        at(10),
+        variant_id=spa.couples60.id,
+        guests=[GuestRequest(pair=p) for p in pairs],
+    )
+    reschedule(session, b, starts_at=at(14))
+    assert {i.starts_at for i in b.items} == {at(14)}
+    assert len({i.therapist_id for i in b.items}) == 2
+
+
+def test_completed_booking_cannot_be_moved(session, spa):
+    b = book(session, spa, Pair(spa.ana.id, spa.bed_a.id, spa.bed_a.room_id), at(10))
+    for s in ("checked_in", "in_service", "completed"):
+        transition(session, b, m.BookingStatus(s))
+    with pytest.raises(ValueError):
+        reschedule(session, b, starts_at=at(15))
+
+
+def test_couples_price_is_for_the_whole_booking(session, spa):
+    pairs = find_couples(session, spa.branch.id, spa.couples60.id, at(10))
+    b = book(
+        session,
+        spa,
+        None,
+        at(10),
+        variant_id=spa.couples60.id,
+        guests=[GuestRequest(pair=p) for p in pairs],
+    )
+    assert sorted(i.price for i in b.items) == [Decimal("750"), Decimal("750")]
+
+
+def test_history_keeps_the_order_things_happened(session, spa):
+    b = book(session, spa, Pair(spa.ana.id, spa.bed_a.id, spa.bed_a.room_id), at(10))
+    for s in ("confirmed", "checked_in", "in_service"):
+        transition(session, b, m.BookingStatus(s))
+    events = session.scalars(
+        select(m.BookingEvent.event_type)
+        .where(m.BookingEvent.booking_id == b.id)
+        .order_by(m.BookingEvent.occurred_at)
+    ).all()
+    assert events == [
+        "booking.created",
+        "booking.confirmed",
+        "booking.checked_in",
+        "booking.in_service",
+    ]

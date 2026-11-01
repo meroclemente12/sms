@@ -11,12 +11,29 @@ Design doc: https://claude.ai/artifact/6pfMAsBWf1NBC9jntFHKb6 · Phase 1 backlog
 | --- | --- |
 | `backend/` | Python 3.12 + FastAPI + SQLAlchemy 2 + Alembic |
 | `backend/app/models.py` | Domain model (tenants, branches, rooms, beds, services, therapists, bookings) |
-| `backend/app/scheduling.py` | Availability engine: valid therapist + bed pairs, couples bookings |
+| `backend/app/scheduling.py` | Availability engine: valid therapist + bed pairs, couples bookings, free times, moving bookings |
 | `backend/app/lifecycle.py` | Booking status transitions with history |
-| `backend/app/api/` | HTTP API: `auth.py` (sign-in, staff), `setup.py` (setup screens), `bookings.py` |
+| `backend/app/api/` | HTTP API: `auth.py` (sign-in, staff), `setup.py` (setup screens), `bookings.py` (day board, bookings), `clients.py` |
 | `backend/app/cli.py` | `create-tenant` command |
 | `backend/alembic/versions/0001_initial_schema.py` | Schema, double-booking exclusion constraints, row-level security |
-| `frontend/` | React + TypeScript (Vite) front desk app: sign-in and setup screens |
+| `frontend/` | React + TypeScript (Vite) front desk app: day board, bookings, walk-ins, clients, setup |
+
+## Front desk screens
+
+- **Day board** (home page): one column per therapist (or per bed), today's bookings
+  coloured by status, hatched where a therapist is off shift. Click an empty time to book
+  it, drag a booking to move it, click a booking to open it. Refreshes every 20 seconds.
+- **New booking**: channel (phone, email, ...), client search by mobile or name (or add
+  a new one), service, optional therapist or gender per guest, then pick from the free
+  times the system finds. Couples services book two therapists in one couples room.
+- **Walk-in**: the earliest free times from now; booking checks the guest in at once.
+- **Booking panel**: confirm, check in, start, complete (with the amount paid), cancel
+  (with a reason), no-show, change time / therapist / length, edit notes or channel,
+  and the full history of who changed what.
+- **Clients**: search, notes, allergies (shown in red wherever the client appears) and
+  visit history across branches.
+
+Prices on the menu are per booking: a couples massage price covers both guests.
 
 ## How double-booking is prevented
 
@@ -42,7 +59,8 @@ http://localhost:8080 and sign in:
 | `banahaw` | `desk@banahaw.ph` | `banahaw-demo` | Front desk |
 
 The demo spa has one branch (Main) with four single rooms, a couples suite and a foot
-spa lounge, a sample service menu, and six therapists with shifts for the next two weeks.
+spa lounge, a sample service menu, six therapists with shifts for the next two weeks,
+and a few sample bookings today and tomorrow.
 The API and its docs are at http://localhost:8000/docs.
 
 - Stop: `Ctrl+C`, or `docker compose down` if you started it with `-d`.
