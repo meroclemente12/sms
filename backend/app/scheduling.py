@@ -14,6 +14,8 @@ exclusion constraints on ``booking_items`` (see migration 0001).
 from __future__ import annotations
 
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -350,4 +352,215 @@ def create_booking(
         if "no_overlap_" in str(exc.orig):
             raise SlotTaken("That therapist or bed was just booked by someone else") from exc
         raise
+    return booking
+
+
+# --- Picking, searching and moving -------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GuestWish:
+    """What the desk asked for one guest: a therapist, a gender, a bed (all optional)."""
+
+    therapist_id: uuid.UUID | None = None
+    gender: str | None = None
+    bed_id: uuid.UUID | None = None
+
+
+def pick_pairs(
+    session: Session,
+    branch_id: uuid.UUID,
+    variant_id: uuid.UUID,
+    starts_at: datetime,
+    wishes: list[GuestWish],
+    *,
+    prefer: list[Pair] | None = None,
+) -> tuple[Pair, ...]:
+    """Best therapist + bed per guest, honouring each guest's wishes.
+
+    ``prefer`` (one pair per guest) keeps a moved booking on its current therapist and
+    bed when they are still free, so a reschedule changes as little as possible.
+    """
+    variant = session.get(ServiceVariant, variant_id)
+    if variant is None or not variant.active:
+        raise NotAvailable("Unknown service")
+    if len(wishes) != variant.service.guest_count:
+        raise ValueError(f"{variant.service.name} needs {variant.service.guest_count} guest(s)")
+    if len(wishes) == 2:
+        w1, w2 = wishes
+        return find_couples(
+            session,
+            branch_id,
+            variant_id,
+            starts_at,
+            therapist_ids=(w1.therapist_id, w2.therapist_id),
+            genders=(w1.gender, w2.gender),
+        )
+    wish = wishes[0]
+    pairs = find_pairs(
+        session,
+        branch_id,
+        variant_id,
+        starts_at,
+        therapist_id=wish.therapist_id,
+        gender=wish.gender,
+    )
+    if wish.bed_id:
+        pairs = [p for p in pairs if p.bed_id == wish.bed_id]
+    if not pairs:
+        raise NotAvailable("No free therapist and bed at that time")
+    if prefer:
+        current = prefer[0]
+        pairs.sort(
+            key=lambda p: (p.therapist_id != current.therapist_id, p.bed_id != current.bed_id)
+        )
+    return (pairs[0],)
+
+
+@dataclass(frozen=True)
+class Slot:
+    starts_at: datetime
+    pairs: tuple[Pair, ...]
+
+
+def find_slots(
+    session: Session,
+    branch_id: uuid.UUID,
+    variant_id: uuid.UUID,
+    wishes: list[GuestWish],
+    *,
+    after: datetime,
+    until: datetime,
+    step_min: int = 15,
+    limit: int = 12,
+) -> list[Slot]:
+    """Start times from ``after`` (rounded up to the step) whose service ends by ``until``,
+    each with the best pairs, earliest first."""
+    variant = session.get(ServiceVariant, variant_id)
+    if variant is None or not variant.active:
+        raise NotAvailable("Unknown service")
+    branch_price(session, branch_id, variant)  # refuses services the branch does not offer
+    step = timedelta(minutes=step_min)
+    epoch = datetime(2000, 1, 1, tzinfo=after.tzinfo)
+    t = epoch + -((epoch - after) // step) * step  # ceil to the step
+    duration = timedelta(minutes=variant.duration_min)
+    out: list[Slot] = []
+    while t + duration <= until and len(out) < limit:
+        try:
+            out.append(Slot(t, pick_pairs(session, branch_id, variant_id, t, wishes)))
+        except NotAvailable:
+            pass
+        t += step
+    return out
+
+
+@contextmanager
+def without_booking(session: Session, booking: Booking) -> Iterator[dict]:
+    """While inside, ``booking``'s own slots count as free.
+
+    Used to search or move a booking without it blocking itself. Everything done inside
+    is rolled back unless the caller sets ``handle["keep"] = True`` (after restoring the
+    items' statuses) and the block exits normally.
+    """
+    nested = session.begin_nested()
+    handle = {"keep": False, "statuses": [i.status for i in booking.items]}
+    for item in booking.items:
+        item.status = BookingStatus.cancelled
+    session.flush()
+    try:
+        yield handle
+    except BaseException:
+        nested.rollback()
+        raise
+    if handle["keep"]:
+        nested.commit()
+    else:
+        nested.rollback()
+
+
+MOVABLE: tuple[str, ...] = (BookingStatus.booked, BookingStatus.confirmed, BookingStatus.checked_in)
+
+
+def reschedule(
+    session: Session,
+    booking: Booking,
+    *,
+    starts_at: datetime,
+    variant_id: uuid.UUID | None = None,
+    wishes: list[GuestWish] | None = None,
+    user_id: uuid.UUID | None = None,
+) -> Booking:
+    """Move a booking (every guest together) to a new time, therapist, bed or length.
+
+    Raises ``NotAvailable`` if nothing fits, ``SlotTaken`` if another desk won the race.
+    """
+    if booking.status not in MOVABLE:
+        raise ValueError(f"A {booking.status.replace('_', ' ')} booking cannot be moved")
+    items = list(booking.items)
+    old_variant = session.get(ServiceVariant, items[0].service_variant_id)
+    variant = session.get(ServiceVariant, variant_id or old_variant.id)
+    if variant is None or not variant.active:
+        raise NotAvailable("Unknown service")
+    if variant.service.guest_count != len(items):
+        raise ValueError("Change a couples booking only to another couples service")
+    current = [Pair(i.therapist_id, i.bed_id, i.bed.room_id) for i in items]
+    if wishes is None:
+        wishes = [GuestWish() for _ in items]
+    before = {
+        "starts_at": items[0].starts_at.isoformat(),
+        "variant_id": str(old_variant.id),
+        "therapists": [str(i.therapist_id) for i in items],
+        "beds": [str(i.bed_id) for i in items],
+    }
+    w = window_for(variant, variant.service, starts_at)
+    price = (
+        items[0].price
+        if variant.id == old_variant.id
+        else branch_price(session, booking.branch_id, variant)
+    )
+    try:
+        with without_booking(session, booking) as handle:
+            pairs = pick_pairs(
+                session, booking.branch_id, variant.id, starts_at, wishes, prefer=current
+            )
+            for item, pair, status, wish in zip(
+                items, pairs, handle["statuses"], wishes, strict=True
+            ):
+                item.therapist_id = pair.therapist_id
+                item.bed_id = pair.bed_id
+                item.service_variant_id = variant.id
+                item.starts_at, item.ends_at = w.starts_at, w.ends_at
+                item.blocked_from, item.blocked_until = w.blocked_from, w.blocked_until
+                item.price = price
+                item.status = status
+                if wish.therapist_id:
+                    item.therapist_requested = True
+                if wish.gender:
+                    item.preferred_gender = wish.gender
+            session.flush()
+            session.add(
+                BookingEvent(
+                    tenant_id=booking.tenant_id,
+                    booking_id=booking.id,
+                    event_type="booking.rescheduled",
+                    payload={
+                        "from": before,
+                        "to": {
+                            "starts_at": w.starts_at.isoformat(),
+                            "variant_id": str(variant.id),
+                            "therapists": [str(p.therapist_id) for p in pairs],
+                            "beds": [str(p.bed_id) for p in pairs],
+                        },
+                    },
+                    user_id=user_id,
+                )
+            )
+            session.flush()
+            handle["keep"] = True
+    except IntegrityError as exc:
+        if "no_overlap_" in str(exc.orig):
+            raise SlotTaken("That therapist or bed was just booked by someone else") from exc
+        raise
+    for item in items:
+        session.refresh(item, ["bed"])
     return booking

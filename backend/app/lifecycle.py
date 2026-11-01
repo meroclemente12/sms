@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import uuid
+from typing import Any
 
 from sqlalchemy.orm import Session
 
@@ -26,7 +27,12 @@ class InvalidTransition(Exception):
 
 
 def transition(
-    session: Session, booking: Booking, to: BookingStatus, *, user_id: uuid.UUID | None = None
+    session: Session,
+    booking: Booking,
+    to: BookingStatus,
+    *,
+    user_id: uuid.UUID | None = None,
+    note: dict[str, Any] | None = None,
 ) -> Booking:
     """Move a booking and all its items (both guests of a couples booking) together."""
     if to not in ALLOWED[booking.status]:
@@ -40,7 +46,7 @@ def transition(
             tenant_id=booking.tenant_id,
             booking_id=booking.id,
             event_type=f"booking.{to}",
-            payload={"from": str(before), "to": str(to)},
+            payload={"from": str(before), "to": str(to), **(note or {})},
             user_id=user_id,
         )
     )
