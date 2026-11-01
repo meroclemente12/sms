@@ -326,3 +326,33 @@ def test_completed_booking_cannot_be_moved(session, spa):
         transition(session, b, m.BookingStatus(s))
     with pytest.raises(ValueError):
         reschedule(session, b, starts_at=at(15))
+
+
+def test_couples_price_is_for_the_whole_booking(session, spa):
+    pairs = find_couples(session, spa.branch.id, spa.couples60.id, at(10))
+    b = book(
+        session,
+        spa,
+        None,
+        at(10),
+        variant_id=spa.couples60.id,
+        guests=[GuestRequest(pair=p) for p in pairs],
+    )
+    assert sorted(i.price for i in b.items) == [Decimal("750"), Decimal("750")]
+
+
+def test_history_keeps_the_order_things_happened(session, spa):
+    b = book(session, spa, Pair(spa.ana.id, spa.bed_a.id, spa.bed_a.room_id), at(10))
+    for s in ("confirmed", "checked_in", "in_service"):
+        transition(session, b, m.BookingStatus(s))
+    events = session.scalars(
+        select(m.BookingEvent.event_type)
+        .where(m.BookingEvent.booking_id == b.id)
+        .order_by(m.BookingEvent.occurred_at)
+    ).all()
+    assert events == [
+        "booking.created",
+        "booking.confirmed",
+        "booking.checked_in",
+        "booking.in_service",
+    ]

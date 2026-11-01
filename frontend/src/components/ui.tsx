@@ -1,5 +1,7 @@
-import { cloneElement, isValidElement, useId } from 'react'
+import { cloneElement, isValidElement, useEffect, useId } from 'react'
 import type { ReactElement, ReactNode } from 'react'
+import { STATUS_LABEL } from '../api'
+import type { BookingStatus } from '../api'
 
 export function ErrorNote({ message }: { message: string | null }) {
   if (!message) return null
@@ -51,4 +53,32 @@ export function Empty({ children }: { children: ReactNode }) {
 export function ReadOnlyNote({ show }: { show: boolean }) {
   if (!show) return null
   return <p className="note">You can view this list. A manager or admin can change it.</p>
+}
+
+/** A panel that slides in from the right. Escape or the × closes it. */
+export function Drawer({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+  return (
+    <div className="drawer-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <aside className="drawer" role="dialog" aria-modal="true" aria-label={title}>
+        <header className="drawer-head">
+          <h2>{title}</h2>
+          <button className="ghost close" onClick={onClose} aria-label="Close">
+            ×
+          </button>
+        </header>
+        <div className="drawer-body">{children}</div>
+      </aside>
+    </div>
+  )
+}
+
+export function StatusBadge({ status }: { status: BookingStatus }) {
+  return <span className={`badge st-${status}`}>{STATUS_LABEL[status]}</span>
 }

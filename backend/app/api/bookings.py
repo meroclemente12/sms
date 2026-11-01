@@ -349,7 +349,7 @@ def post_booking(ctx: StaffSession, body: BookingIn) -> BookingOut:
                     pair=p,
                     guest_client_id=g.guest_client_id,
                     guest_name=g.guest_name,
-                    therapist_requested=g.therapist_requested or g.therapist_id is not None,
+                    therapist_requested=g.therapist_requested,
                     preferred_gender=g.preferred_gender,
                 )
                 for p, g in zip(pairs, body.guests, strict=True)

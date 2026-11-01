@@ -160,26 +160,25 @@ def get_client(ctx: StaffSession, client_id: uuid.UUID) -> ClientDetail:
         .order_by(BookingItem.starts_at.desc())
         .limit(50)
     )
-    seen: set[uuid.UUID] = set()
-    visits = []
+    visits: dict[uuid.UUID, VisitOut] = {}
     for item, booking, branch, service, label, therapist in rows:
-        # A couples booking made by this client shows once, not once per guest.
-        if booking.id in seen:
+        # A couples booking made by this client is one visit at the booking's full price.
+        if booking.id in visits:
+            visits[booking.id].price += item.price
             continue
-        seen.add(booking.id)
-        visits.append(
-            VisitOut(
-                booking_id=booking.id,
-                branch_name=branch,
-                starts_at=item.starts_at,
-                service_name=service,
-                variant_label=label,
-                therapist_name=therapist,
-                status=item.status,
-                price=item.price,
-            )
+        visits[booking.id] = VisitOut(
+            booking_id=booking.id,
+            branch_name=branch,
+            starts_at=item.starts_at,
+            service_name=service,
+            variant_label=label,
+            therapist_name=therapist,
+            status=item.status,
+            price=item.price,
         )
-    return ClientDetail(**ClientOut.model_validate(client).model_dump(), visits=visits)
+    return ClientDetail(
+        **ClientOut.model_validate(client).model_dump(), visits=list(visits.values())
+    )
 
 
 @router.put("/clients/{client_id}", response_model=ClientOut)

@@ -468,7 +468,12 @@ def _book(world, h, **over) -> dict:
 def test_booking_detail_edit_and_history(world):
     a = world.a
     h = world.login("desk@banahaw.ph")
-    b = _book(world, h, guests=[{"therapist_id": str(a.ana.id)}], notes="Likes firm pressure")
+    b = _book(
+        world,
+        h,
+        guests=[{"therapist_id": str(a.ana.id), "therapist_requested": True}],
+        notes="Likes firm pressure",
+    )
     assert b["client"]["name"] == "Maria Santos"
     assert b["channel_name"] == "Phone call"
     assert b["service_name"] == "Swedish massage" and b["total"] == "800.00"

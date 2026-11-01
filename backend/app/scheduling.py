@@ -18,7 +18,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from decimal import Decimal
+from decimal import ROUND_DOWN, Decimal
 
 from sqlalchemy import and_, exists, func, not_, select
 from sqlalchemy.exc import IntegrityError
@@ -268,6 +268,13 @@ def find_couples(
     raise NotAvailable("Not enough free therapists for a couples booking")
 
 
+def split_price(total: Decimal, guests: int) -> list[Decimal]:
+    """The menu price is for the whole booking; a couples price is shared by both guests
+    (any odd centavo goes to the first guest), so the booking total equals the menu."""
+    share = (total / guests).quantize(Decimal("0.01"), rounding=ROUND_DOWN)
+    return [total - share * (guests - 1)] + [share] * (guests - 1)
+
+
 @dataclass(frozen=True)
 class GuestRequest:
     """One guest's line in a booking."""
@@ -315,7 +322,7 @@ def create_booking(
         notes=notes,
         created_by=user_id,
     )
-    for g in guests:
+    for g, item_price in zip(guests, split_price(price, len(guests)), strict=True):
         booking.items.append(
             BookingItem(
                 tenant_id=tenant_id,
@@ -328,7 +335,7 @@ def create_booking(
                 ends_at=w.ends_at,
                 blocked_from=w.blocked_from,
                 blocked_until=w.blocked_until,
-                price=price,
+                price=item_price,
                 status=status,
                 therapist_requested=g.therapist_requested,
                 preferred_gender=g.preferred_gender,
@@ -513,18 +520,18 @@ def reschedule(
         "beds": [str(i.bed_id) for i in items],
     }
     w = window_for(variant, variant.service, starts_at)
-    price = (
-        items[0].price
+    prices = (
+        [i.price for i in items]
         if variant.id == old_variant.id
-        else branch_price(session, booking.branch_id, variant)
+        else split_price(branch_price(session, booking.branch_id, variant), len(items))
     )
     try:
         with without_booking(session, booking) as handle:
             pairs = pick_pairs(
                 session, booking.branch_id, variant.id, starts_at, wishes, prefer=current
             )
-            for item, pair, status, wish in zip(
-                items, pairs, handle["statuses"], wishes, strict=True
+            for item, pair, status, wish, price in zip(
+                items, pairs, handle["statuses"], wishes, prices, strict=True
             ):
                 item.therapist_id = pair.therapist_id
                 item.bed_id = pair.bed_id
@@ -533,8 +540,6 @@ def reschedule(
                 item.blocked_from, item.blocked_until = w.blocked_from, w.blocked_until
                 item.price = price
                 item.status = status
-                if wish.therapist_id:
-                    item.therapist_requested = True
                 if wish.gender:
                     item.preferred_gender = wish.gender
             session.flush()

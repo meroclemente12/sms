@@ -3,7 +3,8 @@ import './App.css'
 import { AuthProvider, useAuth } from './auth'
 import Layout from './Layout'
 import Login from './pages/Login'
-import Today from './pages/Today'
+import Board from './pages/Board'
+import Clients from './pages/Clients'
 import BranchesPage from './pages/setup/BranchesPage'
 import ChannelsPage from './pages/setup/ChannelsPage'
 import SchedulePage from './pages/setup/SchedulePage'
@@ -18,7 +19,9 @@ function Routed() {
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Today />} />
+        <Route index element={<Board />} />
+        <Route path="clients" element={<Clients />} />
+        <Route path="clients/:clientId" element={<Clients />} />
         <Route path="setup/branches" element={<BranchesPage />} />
         <Route path="setup/services" element={<ServicesPage />} />
         <Route path="setup/therapists" element={<TherapistsPage />} />

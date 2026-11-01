@@ -5,53 +5,7 @@ import type { BlockReason, Branch, Room, Shift, Therapist, TimeBlock } from '../
 import { useAuth } from '../../auth'
 import { Card, Empty, ErrorNote, Field, ReadOnlyNote } from '../../components/ui'
 import { useAction, useLoad } from '../../components/hooks'
-
-// --- Date helpers (dates are YYYY-MM-DD strings in the branch's own calendar) ----------
-
-function addDays(day: string, n: number): string {
-  const d = new Date(`${day}T00:00:00Z`)
-  d.setUTCDate(d.getUTCDate() + n)
-  return d.toISOString().slice(0, 10)
-}
-
-function todayIn(tz: string): string {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date())
-}
-
-function mondayOf(day: string): string {
-  const dow = new Date(`${day}T00:00:00Z`).getUTCDay() // 0 = Sunday
-  return addDays(day, -((dow + 6) % 7))
-}
-
-function timeIn(iso: string, tz: string): string {
-  return new Intl.DateTimeFormat('en-GB', { timeZone: tz, hour: '2-digit', minute: '2-digit' }).format(new Date(iso))
-}
-
-function dayLabel(day: string): string {
-  return new Date(`${day}T00:00:00Z`).toLocaleDateString('en-PH', {
-    timeZone: 'UTC',
-    weekday: 'short',
-    day: 'numeric',
-    month: 'short',
-  })
-}
-
-/** ISO timestamp for a wall-clock date and time in the given timezone. */
-function zonedIso(day: string, time: string, tz: string): string {
-  const guess = new Date(`${day}T${time}:00Z`)
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz,
-    hourCycle: 'h23',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).formatToParts(guess)
-  const get = (t: string) => Number(parts.find((p) => p.type === t)?.value)
-  const shown = Date.UTC(get('year'), get('month') - 1, get('day'), get('hour'), get('minute'))
-  return new Date(guess.getTime() - (shown - guess.getTime())).toISOString()
-}
+import { addDays, dayLabel, mondayOf, timeIn, todayIn, zonedIso } from '../../time'
 
 // --- Shifts grid ---------------------------------------------------------------------
 

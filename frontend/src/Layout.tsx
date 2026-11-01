@@ -43,8 +43,9 @@ export default function Layout() {
       <div className="body">
         <nav className="sidenav" aria-label="Sections">
           <NavLink to="/" end>
-            Today
+            Day board
           </NavLink>
+          <NavLink to="/clients">Clients</NavLink>
           <p className="nav-group">Setup</p>
           {SETUP_LINKS.map((l) => (
             <NavLink key={l.to} to={l.to}>
