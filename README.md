@@ -108,7 +108,7 @@ services and prices, therapists, shifts and time off, booking channels, staff ac
 
 | Role | Can |
 | --- | --- |
-| Front desk | Book guests and view setup at their branches |
+| Front desk | Run the day board, bookings, walk-ins and clients at their branches (the Setup menu is hidden) |
 | Manager | Also change rooms, beds, prices, therapists, shifts and time off at their branches |
 | Admin | Everything at every branch, plus branches, the service menu, bed types, booking channels and staff accounts |
 
