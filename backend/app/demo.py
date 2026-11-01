@@ -33,6 +33,7 @@ from app.models import (
     UserBranch,
     UserRole,
 )
+from app.payments import add_default_methods
 from app.scheduling import GuestRequest, GuestWish, create_booking, pick_pairs
 from app.security import hash_password
 
@@ -62,8 +63,10 @@ THERAPISTS = [
 def seed_demo(password: str = DEMO_PASSWORD) -> bool:
     """Create the demo spa. Returns False if it already existed."""
     with SessionLocal() as session:
-        if session.scalar(select(Tenant.id).where(Tenant.slug == DEMO_SLUG)):
-            return False
+        existing = session.scalar(select(Tenant.id).where(Tenant.slug == DEMO_SLUG))
+    if existing:
+        _add_accountant(existing, password)
+        return False
 
     tenant = create_tenant("Banahaw Heals", DEMO_SLUG, "owner@banahaw.ph", "Owner", password)
     tz = ZoneInfo(TZ)
@@ -73,6 +76,8 @@ def seed_demo(password: str = DEMO_PASSWORD) -> bool:
 
         main = Branch(tenant_id=tid, name="Main", address="Lucena City, Quezon", timezone=TZ)
         session.add(main)
+        session.flush()
+        add_default_methods(session, main)
         bed_types = {n: BedType(tenant_id=tid, name=n) for n in ("Massage bed", "Foot spa chair")}
         session.add_all(bed_types.values())
         session.flush()
@@ -153,6 +158,7 @@ def seed_demo(password: str = DEMO_PASSWORD) -> bool:
         for email, name, role in [
             ("manager@banahaw.ph", "Maria Manager", UserRole.manager),
             ("desk@banahaw.ph", "Dana Desk", UserRole.front_desk),
+            ("accounts@banahaw.ph", "Alma Accountant", UserRole.accountant),
         ]:
             u = User(
                 tenant_id=tid,
@@ -173,6 +179,26 @@ def seed_demo(password: str = DEMO_PASSWORD) -> bool:
         )
     _sample_bookings(tenant.id, tz)
     return True
+
+
+def _add_accountant(tenant_id, password: str) -> None:
+    """Demo spas made before the accountant role existed get the accountant user too."""
+    with SessionLocal() as session, session.begin():
+        set_tenant(session, tenant_id)
+        if session.scalar(select(User.id).where(User.email == "accounts@banahaw.ph")):
+            return
+        branch = session.scalar(select(Branch).order_by(Branch.created_at))
+        u = User(
+            tenant_id=tenant_id,
+            email="accounts@banahaw.ph",
+            name="Alma Accountant",
+            role=UserRole.accountant,
+            password_hash=hash_password(password),
+        )
+        session.add(u)
+        session.flush()
+        if branch:
+            session.add(UserBranch(tenant_id=tenant_id, user_id=u.id, branch_id=branch.id))
 
 
 # day offset, hh:mm, client, service, variant, channel, therapist (or None), status

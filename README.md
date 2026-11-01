@@ -13,7 +13,7 @@ Design doc: https://claude.ai/artifact/6pfMAsBWf1NBC9jntFHKb6 · Phase 1 backlog
 | `backend/app/models.py` | Domain model (tenants, branches, rooms, beds, services, therapists, bookings) |
 | `backend/app/scheduling.py` | Availability engine: valid therapist + bed pairs, couples bookings, free times, moving bookings |
 | `backend/app/lifecycle.py` | Booking status transitions with history |
-| `backend/app/api/` | HTTP API: `auth.py` (sign-in, staff), `setup.py` (setup screens), `bookings.py` (day board, bookings), `clients.py` |
+| `backend/app/api/` | HTTP API: `auth.py` (sign-in, staff), `setup.py` (setup screens), `bookings.py` (day board, bookings), `clients.py`, `payments.py` (payment methods, payments, the accountant's check) |
 | `backend/app/cli.py` | `create-tenant` command |
 | `backend/alembic/versions/0001_initial_schema.py` | Schema, double-booking exclusion constraints, row-level security |
 | `frontend/` | React + TypeScript (Vite) front desk app: day board, bookings, walk-ins, clients, setup |
@@ -27,9 +27,17 @@ Design doc: https://claude.ai/artifact/6pfMAsBWf1NBC9jntFHKb6 · Phase 1 backlog
   a new one), service, optional therapist or gender per guest, then pick from the free
   times the system finds. Couples services book two therapists in one couples room.
 - **Walk-in**: the earliest free times from now; booking checks the guest in at once.
-- **Booking panel**: confirm, check in, start, complete (with the amount paid), cancel
+- **Booking panel**: confirm, check in, start, check out (how the guest paid: cash,
+  GCash, bank transfer..., split across several methods if needed), cancel
   (with a reason), no-show, change time / therapist / length, edit notes or channel,
   and the full history of who changed what.
+- **Payments** (accountants, managers, admins): every payment logged at a branch for a
+  day or date range, totals per method, and the cashless ones to check against the
+  GCash / bank statements: verify, or flag with a note. A flagged payment shows in red
+  on the booking so the desk can correct it, and it comes back to be checked again.
+  Nobody but an admin checks a payment they logged themselves.
+- **Payment methods** (Setup): each branch has its own list (Cash, GCash and BPI bank
+  transfer to start). Cashless methods can require a reference number.
 - **Clients**: search, notes, allergies (shown in red wherever the client appears) and
   visit history across branches.
 
@@ -57,6 +65,7 @@ http://localhost:8080 and sign in:
 | `banahaw` | `owner@banahaw.ph` | `banahaw-demo` | Admin |
 | `banahaw` | `manager@banahaw.ph` | `banahaw-demo` | Manager |
 | `banahaw` | `desk@banahaw.ph` | `banahaw-demo` | Front desk |
+| `banahaw` | `accounts@banahaw.ph` | `banahaw-demo` | Accountant (Payments screen only) |
 
 The demo spa has one branch (Main) with four single rooms, a couples suite and a foot
 spa lounge, a sample service menu, six therapists with shifts for the next two weeks,

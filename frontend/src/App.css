@@ -1170,3 +1170,260 @@ h3.spaced {
 .sidenav[hidden] {
   display: none;
 }
+
+/* Payments */
+
+:root {
+  --warn: #9a5b00;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --warn: #f6c56b;
+  }
+}
+
+.pay-pending {
+  background: var(--st-checked_in-bg);
+  color: var(--st-checked_in-ink);
+}
+.pay-verified {
+  background: var(--st-in_service-bg);
+  color: var(--st-in_service-ink);
+}
+.pay-flagged {
+  background: var(--st-cancelled-bg);
+  color: var(--st-cancelled-ink);
+}
+.pay-not_needed {
+  background: var(--st-completed-bg);
+  color: var(--st-completed-ink);
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.num {
+  text-align: right !important;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.flag-note {
+  color: var(--st-cancelled-ink);
+  background: var(--st-cancelled-bg);
+  border-radius: 6px;
+  padding: 4px 8px;
+  margin: 4px 0;
+}
+
+.pay-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.pay-line input[type='number'] {
+  width: 110px;
+}
+
+button.add-line {
+  align-self: flex-start;
+  color: var(--accent);
+}
+
+.booking-payments h3 {
+  margin: 16px 0 6px;
+  font-size: 14px;
+}
+
+.pay-list {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pay-list li {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+
+.pay-list li.flagged {
+  border-color: var(--danger);
+}
+
+.pay-main {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.pay-main .badge {
+  margin-left: auto;
+}
+
+button.small-btn {
+  margin-top: 6px;
+  padding: 3px 10px;
+  font-size: 13px;
+}
+
+.pay-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.pay-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 12px 14px;
+  border-radius: var(--radius);
+  text-align: left;
+}
+
+.pay-stat.on {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.pay-stat-n {
+  font-size: 24px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.pay-stat.warn .pay-stat-n {
+  color: var(--danger);
+}
+
+.pay-table tr.flagged td {
+  background: var(--st-cancelled-bg);
+}
+
+.pay-table .row-actions {
+  min-width: 150px;
+}
+
+.flag-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.flag-form input {
+  min-width: 200px;
+}
+
+.totals .total-row td {
+  font-weight: 650;
+  border-bottom: none;
+}
+
+.payments-page .board-toolbar h1 {
+  margin-right: auto;
+}
+
+@media (max-width: 640px) {
+  .pay-summary {
+    gap: 6px;
+  }
+  .pay-stat {
+    padding: 8px 10px;
+  }
+  .pay-stat-n {
+    font-size: 20px;
+  }
+}
+
+.payments-page .card-head {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.payments-page .segmented-buttons {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  /* Each payment becomes a small card: guest and amount on top, the rest below. */
+  .pay-table thead {
+    display: none;
+  }
+  .pay-table,
+  .pay-table tbody {
+    display: block;
+  }
+  .pay-table tr {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 2px 12px;
+    padding: 10px 8px;
+    border-bottom: 1px solid var(--line);
+  }
+  .pay-table td {
+    border: none;
+    padding: 0;
+    grid-column: 1 / -1;
+  }
+  .pay-table td:nth-child(2) {
+    grid-row: 1;
+    grid-column: 1;
+  }
+  .pay-table td:nth-child(5) {
+    grid-row: 1;
+    grid-column: 2;
+  }
+  .pay-table td:nth-child(1) br {
+    display: none;
+  }
+  .pay-table td:nth-child(1) .muted::before {
+    content: ' ';
+  }
+  .pay-table td:nth-child(3) {
+    grid-column: 1;
+  }
+  .pay-table td:nth-child(4) {
+    grid-column: 2;
+    text-align: right;
+  }
+  .pay-table .row-actions {
+    text-align: left;
+    padding-top: 6px;
+  }
+  .pay-table tr.flagged td {
+    background: none;
+  }
+  .pay-table tr.flagged {
+    background: var(--st-cancelled-bg);
+  }
+}

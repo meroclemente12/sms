@@ -6,6 +6,7 @@ import { Drawer, ErrorNote, Field, StatusBadge } from '../components/ui'
 import { useAction, useLoad } from '../components/hooks'
 import { clockIn, dayOf, longDayLabel, peso, timeIn } from '../time'
 import SlotPicker from './SlotPicker'
+import { BookingPayments, Checkout } from './Payments'
 import type { Names } from './SlotPicker'
 
 // Next steps the desk can take from each status (the API enforces the same rules).
@@ -37,7 +38,7 @@ export default function BookingDrawer({
   onClose: () => void
   onChanged: () => void
 }) {
-  const { data: b, error, setData } = useLoad(() => api<Booking>(`/bookings/${bookingId}`), [bookingId])
+  const { data: b, error, setData, reload } = useLoad(() => api<Booking>(`/bookings/${bookingId}`), [bookingId])
   const [mode, setMode] = useState<'view' | 'move' | 'edit' | 'cancel' | 'checkout'>('view')
   const action = useAction()
 
@@ -151,7 +152,7 @@ export default function BookingDrawer({
           <ErrorNote message={action.error} />
 
           {mode === 'checkout' && (
-            <Checkout total={b.total} busy={action.busy} onCancel={() => setMode('view')} onDone={(amount) => void setStatus('completed', { amount_paid: amount })} />
+            <Checkout booking={b} busy={action.busy} onCancel={() => setMode('view')} onDone={(payments) => void setStatus('completed', { payments })} />
           )}
           {mode === 'cancel' && (
             <CancelForm busy={action.busy} onBack={() => setMode('view')} onCancel={(reason) => void setStatus('cancelled', { reason: reason || null })} />
@@ -159,37 +160,21 @@ export default function BookingDrawer({
           {mode === 'edit' && <EditForm booking={b} onBack={() => setMode('view')} onSaved={updated} />}
           {mode === 'move' && <MoveForm booking={b} tz={tz} names={names} onBack={() => setMode('view')} onMoved={updated} />}
 
+          {mode === 'view' && (
+            <BookingPayments
+              booking={b}
+              tz={tz}
+              onChanged={() => {
+                void reload()
+                onChanged()
+              }}
+            />
+          )}
+
           <History events={b.events} tz={tz} names={names} />
         </div>
       )}
     </Drawer>
-  )
-}
-
-function Checkout({
-  total,
-  busy,
-  onCancel,
-  onDone,
-}: {
-  total: string
-  busy: boolean
-  onCancel: () => void
-  onDone: (amount: string) => void
-}) {
-  const [amount, setAmount] = useState(String(Number(total)))
-  return (
-    <div className="inline-form">
-      <Field label="Amount paid (₱)" hint="For the record only. Payments come in a later version.">
-        <input type="number" min="0" step="1" value={amount} onChange={(e) => setAmount(e.target.value)} autoFocus />
-      </Field>
-      <div className="form-actions">
-        <button className="primary" disabled={busy || amount === ''} onClick={() => onDone(amount)}>
-          Complete
-        </button>
-        <button onClick={onCancel}>Back</button>
-      </div>
-    </div>
   )
 }
 
@@ -346,6 +331,14 @@ const EVENT_LABEL: Record<string, string> = {
   'booking.rescheduled': 'Moved',
 }
 
+const PAYMENT_EVENT: Record<string, string> = {
+  'payment.recorded': 'Payment logged',
+  'payment.corrected': 'Payment corrected',
+  'payment.verified': 'Payment verified',
+  'payment.flagged': 'Payment flagged',
+  'payment.reopened': 'Payment check reopened',
+}
+
 function History({ events, tz, names }: { events: BookingEvent[]; tz: string; names: Names }) {
   if (events.length === 0) return null
   return (
@@ -375,6 +368,13 @@ function eventText(e: BookingEvent, tz: string, names: Names): string {
       .join(' and ')}`
   }
   if (EVENT_LABEL[e.event_type]) return EVENT_LABEL[e.event_type]
+  if (e.event_type.startsWith('payment.')) {
+    const what = PAYMENT_EVENT[e.event_type] ?? 'Payment changed'
+    let text = `${what}: ${peso(String(p.amount))} ${String(p.method)}`
+    if (p.reference) text += ` (ref ${String(p.reference)})`
+    if (p.note) text += ` · ${String(p.note)}`
+    return text
+  }
   const status = e.event_type.replace('booking.', '').replace('_', ' ')
   let text = status.charAt(0).toUpperCase() + status.slice(1)
   if (p.cancel_reason) text += `: ${String(p.cancel_reason)}`

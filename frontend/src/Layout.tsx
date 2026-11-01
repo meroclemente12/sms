@@ -8,6 +8,7 @@ const SETUP_LINKS = [
   { to: '/setup/therapists', label: 'Therapists' },
   { to: '/setup/schedule', label: 'Shifts and time off' },
   { to: '/setup/channels', label: 'Booking channels' },
+  { to: '/setup/payment-methods', label: 'Payment methods' },
 ]
 
 const NAV_KEY = 'banahaw.sidebar'
@@ -21,7 +22,7 @@ function readSidebar(): boolean {
 }
 
 export default function Layout() {
-  const { me, branch, setBranchId, logout, isAdmin, canManage } = useAuth()
+  const { me, branch, setBranchId, logout, isAdmin, canManage, isAccountant, canCheckPayments } = useAuth()
   const [navOpen, setNavOpen] = useState(readSidebar)
   if (!me) return null
 
@@ -51,7 +52,7 @@ export default function Layout() {
         </button>
         <div className="brand">
           <strong>{me.tenant_name}</strong>
-          <span className="muted">Front desk</span>
+          <span className="muted">{isAccountant ? 'Accounts' : 'Front desk'}</span>
         </div>
         {me.branches.length > 0 && (
           <div className="branch-picker">
@@ -76,10 +77,15 @@ export default function Layout() {
       </header>
       <div className="body">
         <nav id="sidenav" className="sidenav" aria-label="Sections" hidden={!navOpen}>
-          <NavLink to="/" end>
-            Day board
-          </NavLink>
-          <NavLink to="/clients">Clients</NavLink>
+          {!isAccountant && (
+            <>
+              <NavLink to="/" end>
+                Day board
+              </NavLink>
+              <NavLink to="/clients">Clients</NavLink>
+            </>
+          )}
+          {canCheckPayments && <NavLink to="/payments">Payments</NavLink>}
           {canManage && (
             <>
               <p className="nav-group">Setup</p>

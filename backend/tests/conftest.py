@@ -18,6 +18,7 @@ TEST_URL = os.environ.get(
 os.environ["DATABASE_URL"] = TEST_URL
 
 from app import models as m  # noqa: E402
+from app.payments import add_default_methods  # noqa: E402
 
 MNL = ZoneInfo("Asia/Manila")
 DAY = date(2026, 11, 2)
@@ -146,6 +147,7 @@ def make_spa(s: Session, name: str = "Banahaw Heals") -> Spa:
     walk = m.BookingChannel(tenant_id=tid, code="walk_in", name="Walk-in")
     client = m.Client(tenant_id=tid, name="Maria Santos", mobile="+639170000000")
     s.add_all([phone, email, walk, client])
+    add_default_methods(s, br)
     s.flush()
     return Spa(t, br, phone, walk, client, sw60, cp60, ana, ben, cora, bed_a, bed_b, [c1, c2])
 

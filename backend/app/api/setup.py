@@ -38,6 +38,7 @@ from app.models import (
     TherapistSkill,
     TimeBlock,
 )
+from app.payments import add_default_methods
 
 router = APIRouter(tags=["setup"])
 
@@ -109,6 +110,8 @@ def create_branch(ctx: AdminSession, body: BranchIn) -> Branch:
     branch = Branch(tenant_id=staff.tenant_id)
     _apply(branch, body)
     session.add(branch)
+    _flush(session)
+    add_default_methods(session, branch)
     _flush(session)
     return branch
 

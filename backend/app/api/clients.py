@@ -16,7 +16,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, or_, select
 
-from app.api.deps import StaffSession
+from app.api.deps import DeskSession, StaffSession
 from app.models import (
     Booking,
     BookingItem,
@@ -120,7 +120,7 @@ def search_clients(ctx: StaffSession, q: str = "", limit: int = 20) -> list[Clie
 
 
 @router.post("/clients", response_model=ClientOut, status_code=201)
-def create_client(ctx: StaffSession, body: ClientIn) -> Client:
+def create_client(ctx: DeskSession, body: ClientIn) -> Client:
     session, staff = ctx
     data = _clean(body)
     _check_duplicate(session, data["mobile"])
@@ -182,7 +182,7 @@ def get_client(ctx: StaffSession, client_id: uuid.UUID) -> ClientDetail:
 
 
 @router.put("/clients/{client_id}", response_model=ClientOut)
-def update_client(ctx: StaffSession, client_id: uuid.UUID, body: ClientIn) -> Client:
+def update_client(ctx: DeskSession, client_id: uuid.UUID, body: ClientIn) -> Client:
     session, _ = ctx
     client = _get(session, client_id)
     data = _clean(body)

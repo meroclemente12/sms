@@ -84,6 +84,14 @@ def require_role(*roles: UserRole):
 
 ManagerSession = Annotated[tuple[Session, Staff], Depends(require_role(UserRole.manager))]
 AdminSession = Annotated[tuple[Session, Staff], Depends(require_role(UserRole.admin))]
+# Booking and taking payments: everyone except the accountant, who only checks payments.
+DeskSession = Annotated[
+    tuple[Session, Staff], Depends(require_role(UserRole.front_desk, UserRole.manager))
+]
+# Checking cashless payments.
+CheckerSession = Annotated[
+    tuple[Session, Staff], Depends(require_role(UserRole.accountant, UserRole.manager))
+]
 
 
 def ensure_branch(session: Session, staff: Staff, branch_id: uuid.UUID) -> None:

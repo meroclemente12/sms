@@ -11,7 +11,16 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 from alembic import op
-from app.models import ACTIVE_STATUSES, TENANT_SCOPED_TABLES
+from app.models import ACTIVE_STATUSES
+
+# The tenant tables this migration creates. Frozen here (not read from app.models) so
+# tables added by later migrations are not touched before they exist.
+TENANT_SCOPED_TABLES = (
+    'bed_types', 'booking_channels', 'branches', 'clients', 'services', 'users', 'rooms',
+    'service_variants', 'therapists', 'user_branches', 'beds', 'branch_service_prices',
+    'bookings', 'shifts', 'therapist_skills', 'booking_events', 'booking_items',
+    'time_blocks',
+)
 
 # revision identifiers, used by Alembic.
 revision: str = '0001'

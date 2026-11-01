@@ -14,7 +14,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import Staff, StaffSession, ensure_branch
+from app.api.deps import DeskSession, Staff, StaffSession, ensure_branch
+from app.api.payments import PaymentIn, PaymentOut, payments_for_booking
 from app.lifecycle import InvalidTransition, transition
 from app.models import (
     Bed,
@@ -33,6 +34,7 @@ from app.models import (
     TimeBlock,
     User,
 )
+from app.payments import PaymentError, record_payment
 from app.scheduling import (
     GuestRequest,
     GuestWish,
@@ -236,6 +238,7 @@ class BookingOut(BaseModel):
     cancel_reason: str | None
     created_at: datetime
     items: list[ItemOut]
+    payments: list[PaymentOut] = []
     events: list[EventOut] = []
 
 
@@ -267,7 +270,11 @@ def _out(db: Session, b: Booking, *, with_events: bool = False) -> BookingOut:
             )
             for e, name in rows
         ]
+    payments = payments_for_booking(db, b.id)
+    # Bookings checked out before payments were logged only noted the amount.
     paid = (b.attributes or {}).get("amount_paid")
+    if payments:
+        paid = sum((p.amount for p in payments), Decimal(0))
     return BookingOut(
         id=b.id,
         branch_id=b.branch_id,
@@ -312,6 +319,7 @@ def _out(db: Session, b: Booking, *, with_events: bool = False) -> BookingOut:
             )
             for i in items
         ],
+        payments=payments,
         events=events,
     )
 
@@ -327,7 +335,7 @@ def _check_refs(db: Session, client_id: uuid.UUID | None, channel_id: uuid.UUID 
 
 
 @router.post("/bookings", response_model=BookingOut, status_code=201)
-def post_booking(ctx: StaffSession, body: BookingIn) -> BookingOut:
+def post_booking(ctx: DeskSession, body: BookingIn) -> BookingOut:
     """Book the given therapist + bed per guest, or auto-pick the best pair if omitted."""
     db, staff = ctx
     ensure_branch(db, staff, body.branch_id)
@@ -378,7 +386,7 @@ class BookingEdit(BaseModel):
 
 
 @router.patch("/bookings/{booking_id}", response_model=BookingOut)
-def edit_booking(ctx: StaffSession, booking_id: uuid.UUID, body: BookingEdit) -> BookingOut:
+def edit_booking(ctx: DeskSession, booking_id: uuid.UUID, body: BookingEdit) -> BookingOut:
     """Change the booking's client, channel or notes. Only the fields sent are changed."""
     db, staff = ctx
     booking = _booking(db, staff, booking_id)
@@ -417,7 +425,7 @@ class RescheduleIn(BaseModel):
 
 
 @router.post("/bookings/{booking_id}/reschedule", response_model=BookingOut)
-def post_reschedule(ctx: StaffSession, booking_id: uuid.UUID, body: RescheduleIn) -> BookingOut:
+def post_reschedule(ctx: DeskSession, booking_id: uuid.UUID, body: RescheduleIn) -> BookingOut:
     """Move a booking. Both guests of a couples booking move together."""
     db, staff = ctx
     booking = _booking(db, staff, booking_id)
@@ -439,12 +447,17 @@ def post_reschedule(ctx: StaffSession, booking_id: uuid.UUID, body: RescheduleIn
 
 class StatusIn(BaseModel):
     reason: str | None = Field(default=None, max_length=500, description="Why it was cancelled")
-    amount_paid: Decimal | None = Field(default=None, ge=0, description="Noted at check-out")
+    amount_paid: Decimal | None = Field(
+        default=None, ge=0, description="Noted at check-out (older clients; prefer payments)"
+    )
+    payments: list[PaymentIn] = Field(
+        default=[], description="Logged at check-out: one line per method (split payments)"
+    )
 
 
 @router.post("/bookings/{booking_id}/status/{to}", response_model=BookingOut)
 def post_status(
-    ctx: StaffSession,
+    ctx: DeskSession,
     booking_id: uuid.UUID,
     to: BookingStatus,
     body: StatusIn | None = None,
@@ -455,12 +468,22 @@ def post_status(
     note: dict[str, str] = {}
     if body.reason and to in (BookingStatus.cancelled, BookingStatus.no_show):
         note["cancel_reason"] = body.reason
+    if body.payments and to != BookingStatus.completed:
+        raise HTTPException(422, "Payments are logged when the booking is completed")
+    if body.payments:
+        body.amount_paid = sum((p.amount for p in body.payments), Decimal(0))
     if body.amount_paid is not None and to == BookingStatus.completed:
         note["amount_paid"] = str(body.amount_paid)
     try:
         transition(db, booking, to, user_id=staff.user.id, note=note)
     except InvalidTransition as e:
         raise HTTPException(409, str(e)) from e
+    try:
+        for line in body.payments:
+            record_payment(db, booking, line.line(), user_id=staff.user.id)
+    except PaymentError as e:
+        # The whole request is one transaction, so the status change is undone too.
+        raise HTTPException(422, str(e)) from e
     if note:
         booking.attributes = {**(booking.attributes or {}), **note}
         db.flush()

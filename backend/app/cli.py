@@ -73,7 +73,7 @@ def main(argv: list[str] | None = None) -> int:
         password = os.environ.get("DEMO_PASSWORD") or DEMO_PASSWORD
         if seed_demo(password):
             print(f"Demo spa created. Sign in with spa code '{DEMO_SLUG}', password '{password}':")
-            print("  owner@banahaw.ph (admin), manager@banahaw.ph, desk@banahaw.ph")
+            print("  owner@banahaw.ph (admin), manager@, desk@, accounts@banahaw.ph (accountant)")
         else:
             print(f"Demo spa '{DEMO_SLUG}' already exists, nothing to do.")
         return 0

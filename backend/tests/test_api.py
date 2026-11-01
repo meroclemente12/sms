@@ -60,6 +60,7 @@ def world(engine):
         _user(s, a, "owner@banahaw.ph", "admin")
         _user(s, a, "mgr@banahaw.ph", "manager", [a.branch])
         _user(s, a, "desk@banahaw.ph", "front_desk", [a.branch])
+        _user(s, a, "acct@banahaw.ph", "accountant", [a.branch])
         _user(s, a, "north.mgr@banahaw.ph", "manager", [north])
         _user(s, a, "gone@banahaw.ph", "front_desk", [a.branch], active=False)
         _user(s, b, "owner@other.ph", "admin")

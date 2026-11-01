@@ -8,7 +8,8 @@ import { useAction, useLoad } from '../../components/hooks'
 
 const ROLES: { value: Role; label: string; hint: string }[] = [
   { value: 'front_desk', label: 'Front desk', hint: 'Books guests at their branches' },
-  { value: 'manager', label: 'Manager', hint: 'Also sets up rooms, prices, therapists and shifts at their branches' },
+  { value: 'accountant', label: 'Accountant', hint: 'Checks GCash, bank and other cashless payments at their branches. Cannot book.' },
+  { value: 'manager', label: 'Manager', hint: 'Also sets up rooms, prices, therapists, shifts and payment methods at their branches, and can check payments' },
   { value: 'admin', label: 'Admin', hint: 'Everything, at every branch, including staff accounts' },
 ]
 
