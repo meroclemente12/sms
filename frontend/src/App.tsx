@@ -7,21 +7,30 @@ import Board from './pages/Board'
 import Clients from './pages/Clients'
 import BranchesPage from './pages/setup/BranchesPage'
 import ChannelsPage from './pages/setup/ChannelsPage'
+import PaymentMethodsPage from './pages/setup/PaymentMethodsPage'
+import Payments from './pages/Payments'
 import SchedulePage from './pages/setup/SchedulePage'
 import ServicesPage from './pages/setup/ServicesPage'
 import StaffPage from './pages/setup/StaffPage'
 import TherapistsPage from './pages/setup/TherapistsPage'
 
 function Routed() {
-  const { me, loading, canManage, isAdmin } = useAuth()
+  const { me, loading, canManage, isAdmin, isAccountant, canCheckPayments } = useAuth()
   if (loading) return <p className="loading">Loading…</p>
   if (!me) return <Login />
   return (
     <Routes>
       <Route element={<Layout />}>
-        <Route index element={<Board />} />
-        <Route path="clients" element={<Clients />} />
-        <Route path="clients/:clientId" element={<Clients />} />
+        {isAccountant ? (
+          <Route index element={<Navigate to="/payments" replace />} />
+        ) : (
+          <>
+            <Route index element={<Board />} />
+            <Route path="clients" element={<Clients />} />
+            <Route path="clients/:clientId" element={<Clients />} />
+          </>
+        )}
+        {canCheckPayments && <Route path="payments" element={<Payments />} />}
         {canManage && (
           <>
             <Route path="setup/branches" element={<BranchesPage />} />
@@ -29,6 +38,7 @@ function Routed() {
             <Route path="setup/therapists" element={<TherapistsPage />} />
             <Route path="setup/schedule" element={<SchedulePage />} />
             <Route path="setup/channels" element={<ChannelsPage />} />
+            <Route path="setup/payment-methods" element={<PaymentMethodsPage />} />
           </>
         )}
         {isAdmin && <Route path="setup/staff" element={<StaffPage />} />}

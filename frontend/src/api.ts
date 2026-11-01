@@ -68,7 +68,7 @@ export async function api<T>(path: string, init: RequestInit & { json?: unknown 
 
 // --- Types mirrored from the API ------------------------------------------------------
 
-export type Role = 'admin' | 'manager' | 'front_desk'
+export type Role = 'admin' | 'manager' | 'front_desk' | 'accountant'
 
 export interface BranchRef {
   id: string
@@ -300,6 +300,7 @@ export interface Booking {
   cancel_reason: string | null
   created_at: string
   items: BookingItem[]
+  payments: Payment[]
   events: BookingEvent[]
 }
 
@@ -359,4 +360,74 @@ export interface Board {
   beds: BoardBed[]
   blocks: BoardBlock[]
   items: BoardItem[]
+}
+
+// --- Payments --------------------------------------------------------------------------
+
+export type PaymentKind = 'cash' | 'cashless'
+
+export interface PaymentMethod {
+  id: string
+  branch_id: string
+  name: string
+  kind: PaymentKind
+  needs_reference: boolean
+  sort_order: number
+  active: boolean
+}
+
+export type PaymentStatus = 'not_needed' | 'pending' | 'verified' | 'flagged'
+
+export const PAYMENT_STATUS_LABEL: Record<PaymentStatus, string> = {
+  not_needed: 'Cash',
+  pending: 'To check',
+  verified: 'Verified',
+  flagged: 'Flagged',
+}
+
+export interface Payment {
+  id: string
+  booking_id: string
+  method_id: string
+  method_name: string
+  kind: PaymentKind
+  amount: string
+  reference: string | null
+  status: PaymentStatus
+  recorded_by_name: string | null
+  recorded_at: string
+  checked_by_name: string | null
+  checked_at: string | null
+  check_note: string | null
+}
+
+export interface PaymentRow extends Payment {
+  client_name: string
+  service_name: string
+  booking_starts_at: string
+}
+
+export interface MethodTotal {
+  method_id: string
+  method_name: string
+  kind: PaymentKind
+  count: number
+  amount: string
+}
+
+export interface PaymentList {
+  timezone: string
+  date_from: string
+  date_to: string
+  items: PaymentRow[]
+  totals: MethodTotal[]
+  pending: number
+  flagged: number
+  verified: number
+}
+
+export interface PaymentLineIn {
+  method_id: string
+  amount: string
+  reference: string | null
 }

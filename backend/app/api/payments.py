@@ -249,6 +249,7 @@ class MethodTotal(BaseModel):
 
 
 class PaymentList(BaseModel):
+    timezone: str
     date_from: date
     date_to: date
     items: list[PaymentRow]
@@ -345,6 +346,7 @@ def list_payments(
         for mt in session.scalars(select(PaymentMethod).where(PaymentMethod.branch_id == branch_id))
     }
     return PaymentList(
+        timezone=branch.timezone,
         date_from=date_from,
         date_to=date_to,
         items=items,

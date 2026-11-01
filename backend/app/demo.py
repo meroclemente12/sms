@@ -63,8 +63,10 @@ THERAPISTS = [
 def seed_demo(password: str = DEMO_PASSWORD) -> bool:
     """Create the demo spa. Returns False if it already existed."""
     with SessionLocal() as session:
-        if session.scalar(select(Tenant.id).where(Tenant.slug == DEMO_SLUG)):
-            return False
+        existing = session.scalar(select(Tenant.id).where(Tenant.slug == DEMO_SLUG))
+    if existing:
+        _add_accountant(existing, password)
+        return False
 
     tenant = create_tenant("Banahaw Heals", DEMO_SLUG, "owner@banahaw.ph", "Owner", password)
     tz = ZoneInfo(TZ)
@@ -177,6 +179,26 @@ def seed_demo(password: str = DEMO_PASSWORD) -> bool:
         )
     _sample_bookings(tenant.id, tz)
     return True
+
+
+def _add_accountant(tenant_id, password: str) -> None:
+    """Demo spas made before the accountant role existed get the accountant user too."""
+    with SessionLocal() as session, session.begin():
+        set_tenant(session, tenant_id)
+        if session.scalar(select(User.id).where(User.email == "accounts@banahaw.ph")):
+            return
+        branch = session.scalar(select(Branch).order_by(Branch.created_at))
+        u = User(
+            tenant_id=tenant_id,
+            email="accounts@banahaw.ph",
+            name="Alma Accountant",
+            role=UserRole.accountant,
+            password_hash=hash_password(password),
+        )
+        session.add(u)
+        session.flush()
+        if branch:
+            session.add(UserBranch(tenant_id=tenant_id, user_id=u.id, branch_id=branch.id))
 
 
 # day offset, hh:mm, client, service, variant, channel, therapist (or None), status
