@@ -103,6 +103,8 @@ class Tenant(TimestampMixin, Base):
 
     id: Mapped[uuid.UUID] = _pk()
     name: Mapped[str] = mapped_column(String(200))
+    # Short unique handle staff type at login (later also the SaaS subdomain).
+    slug: Mapped[str] = mapped_column(String(63), unique=True)
     plan: Mapped[str] = mapped_column(String(50), default="standard")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     default_timezone: Mapped[str] = mapped_column(String(64), default="Asia/Manila")

@@ -13,8 +13,10 @@ Design doc: https://claude.ai/artifact/6pfMAsBWf1NBC9jntFHKb6 · Phase 1 backlog
 | `backend/app/models.py` | Domain model (tenants, branches, rooms, beds, services, therapists, bookings) |
 | `backend/app/scheduling.py` | Availability engine: valid therapist + bed pairs, couples bookings |
 | `backend/app/lifecycle.py` | Booking status transitions with history |
+| `backend/app/api/` | HTTP API: `auth.py` (sign-in, staff), `setup.py` (setup screens), `bookings.py` |
+| `backend/app/cli.py` | `create-tenant` command |
 | `backend/alembic/versions/0001_initial_schema.py` | Schema, double-booking exclusion constraints, row-level security |
-| `frontend/` | React + TypeScript (Vite) front desk app |
+| `frontend/` | React + TypeScript (Vite) front desk app: sign-in and setup screens |
 
 ## How double-booking is prevented
 
@@ -30,12 +32,40 @@ cd backend
 uv sync
 export DATABASE_URL=postgresql+psycopg://banahaw:banahaw@localhost:5432/banahaw
 uv run alembic upgrade head
+# Create your spa and its first admin (asks for a password):
+uv run python -m app.cli create-tenant --name "Banahaw Heals" --slug banahaw \
+    --admin-email you@example.com --admin-name "Your Name"
 uv run uvicorn app.api.main:app --reload     # http://localhost:8000/docs
 
 cd ../frontend
 npm install
 npm run dev                                   # http://localhost:5173
 ```
+
+Sign in with spa code `banahaw`, then use the Setup pages: branches and rooms,
+services and prices, therapists, shifts and time off, booking channels, staff accounts.
+
+### Settings (environment variables)
+
+| Name | What | Default |
+| --- | --- | --- |
+| `DATABASE_URL` | PostgreSQL connection | local docker-compose database |
+| `JWT_SECRET` | Signs sign-in tokens; set a long random value in production (`openssl rand -hex 32`) | insecure dev value |
+| `ACCESS_TOKEN_HOURS` | How long a sign-in lasts | 12 |
+| `CORS_ORIGINS` | Comma-separated web app origins allowed to call the API | `http://localhost:5173` |
+| `VITE_API_URL` (frontend) | Where the web app finds the API | `http://localhost:8000` |
+
+## Who can do what
+
+| Role | Can |
+| --- | --- |
+| Front desk | Book guests and view setup at their branches |
+| Manager | Also change rooms, beds, prices, therapists, shifts and time off at their branches |
+| Admin | Everything at every branch, plus branches, the service menu, bed types, booking channels and staff accounts |
+
+Every API request runs as the `banahaw_app` database role (created by migration 0003),
+so PostgreSQL row-level security keeps each spa's data separate even if the app
+connects as the table owner.
 
 ## Tests
 

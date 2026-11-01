@@ -210,7 +210,7 @@ def test_couples_needs_two_guests(session, spa):
 
 def test_row_level_security_isolates_tenants(session, spa):
     other = make_spa(session, name="Other Spa")
-    session.execute(text("SET LOCAL ROLE app_user"))
+    session.execute(text("SET LOCAL ROLE banahaw_app"))
     session.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(spa.tenant.id)})
     names = set(session.scalars(text("SELECT name FROM tenants")))
     therapist_tenants = set(session.scalars(text("SELECT DISTINCT tenant_id FROM therapists")))
