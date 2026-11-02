@@ -1,0 +1,28 @@
+# Render Blueprint for the Banahaw Reservations API.
+# Render > New > Blueprint > pick this repository. See docs/deploy.md.
+services:
+  - type: web
+    name: banahaw-api
+    runtime: docker
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    region: singapore
+    # "starter" stays awake. The free plan sleeps after 15 idle minutes and the
+    # next request then waits about a minute, which is too slow for the front desk.
+    plan: starter
+    branch: main
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      # Neon > Connect > connection string with "Connection pooling" turned OFF.
+      - key: DATABASE_URL
+        sync: false
+      # The Cloudflare Pages address, e.g. https://banahaw.pages.dev
+      - key: CORS_ORIGINS
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: SEED_DEMO
+        value: "false"

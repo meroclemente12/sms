@@ -107,11 +107,18 @@ services and prices, therapists, shifts and time off, booking channels, staff ac
 
 | Name | What | Default |
 | --- | --- | --- |
-| `DATABASE_URL` | PostgreSQL connection | local docker-compose database |
+| `ENVIRONMENT` | `production` makes the API refuse to start without a real `JWT_SECRET` | `development` |
+| `DATABASE_URL` | PostgreSQL connection (`postgresql://...` from Neon works as is) | local docker-compose database |
 | `JWT_SECRET` | Signs sign-in tokens; set a long random value in production (`openssl rand -hex 32`) | insecure dev value |
 | `ACCESS_TOKEN_HOURS` | How long a sign-in lasts | 12 |
 | `CORS_ORIGINS` | Comma-separated web app origins allowed to call the API | `http://localhost:5173` |
 | `VITE_API_URL` (frontend) | Where the web app finds the API | `http://localhost:8000` |
+
+## Deploy
+
+The live app runs on Neon (database), Render (API) and Cloudflare Pages (web app),
+all in Singapore, with a nightly backup check in GitHub Actions. Step-by-step setup and
+restore instructions: [docs/deploy.md](docs/deploy.md).
 
 ## Who can do what
 
