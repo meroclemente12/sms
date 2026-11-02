@@ -1,0 +1,89 @@
+# Nightly database backup and restore check.
+#
+# Every night (02:00 Philippine time) this dumps the production database, checks the
+# dump restores cleanly into a fresh PostgreSQL, and keeps it, encrypted, as a
+# workflow artifact for 14 days. If any step fails, GitHub emails the repo owner.
+#
+# Needs two repository secrets (Settings > Secrets and variables > Actions):
+#   BACKUP_DATABASE_URL  Neon connection string (pooling OFF), postgresql://...
+#   BACKUP_PASSPHRASE    long random text; needed to decrypt a backup, keep a copy safe
+# Until both are set, the job only prints a notice.
+#
+# Restore a backup: see docs/deploy.md.
+name: Nightly backup
+
+on:
+  schedule:
+    - cron: "0 18 * * *" # 18:00 UTC = 02:00 Asia/Manila
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    services:
+      restore:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: restore_check
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      PG_IMAGE: postgres:16
+    steps:
+      - name: Check secrets
+        id: cfg
+        run: |
+          if [ -z "$DATABASE_URL" ] || [ -z "$PASSPHRASE" ]; then
+            echo "::notice::BACKUP_DATABASE_URL or BACKUP_PASSPHRASE is not set; skipping backup."
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Dump the database
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          stamp=$(TZ=Asia/Manila date +%Y-%m-%d)
+          echo "STAMP=$stamp" >> "$GITHUB_ENV"
+          docker run --rm -e DATABASE_URL -v "$PWD:/out" "$PG_IMAGE" \
+            sh -c 'pg_dump --format=custom --no-owner --no-privileges --file=/out/banahaw.dump "$DATABASE_URL"'
+          ls -l banahaw.dump
+
+      - name: Restore into a fresh database and check it
+        if: steps.cfg.outputs.ready == 'true'
+        env:
+          RESTORE_URL: postgresql://postgres:postgres@localhost:5432/restore_check
+        run: |
+          docker run --rm --network host -e RESTORE_URL -v "$PWD:/in" "$PG_IMAGE" \
+            pg_restore --no-owner --no-privileges --exit-on-error --dbname="$RESTORE_URL" /in/banahaw.dump
+          docker run --rm --network host -e RESTORE_URL "$PG_IMAGE" psql "$RESTORE_URL" -v ON_ERROR_STOP=1 -At -c "
+            SELECT 'migration ' || version_num FROM alembic_version;
+            SELECT 'spas '      || count(*) FROM tenants;
+            SELECT 'bookings '  || count(*) FROM bookings;
+            SELECT 'clients '   || count(*) FROM clients;
+            SELECT 'payments '  || count(*) FROM payments;" | tee counts.txt
+          grep -q '^spas [1-9]' counts.txt || { echo "::error::Restored backup has no spas"; exit 1; }
+          { echo "### Backup $STAMP restored cleanly"; echo '```'; cat counts.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Encrypt
+        if: steps.cfg.outputs.ready == 'true'
+        run: |
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 0 \
+            --symmetric --cipher-algo AES256 \
+            --output "banahaw-$STAMP.dump.gpg" banahaw.dump <<< "$PASSPHRASE"
+          rm banahaw.dump
+
+      - uses: actions/upload-artifact@v4
+        if: steps.cfg.outputs.ready == 'true'
+        with:
+          name: banahaw-db-${{ env.STAMP }}
+          path: banahaw-${{ env.STAMP }}.dump.gpg
+          retention-days: 14
+          if-no-files-found: error
