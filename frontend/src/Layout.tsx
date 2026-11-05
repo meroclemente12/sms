@@ -54,7 +54,14 @@ export default function Layout() {
           <strong>{me.tenant_name}</strong>
           <span className="muted">{isAccountant ? 'Accounts' : 'Front desk'}</span>
         </div>
-        {me.branches.length > 0 && (
+        {/* Someone in only one branch has nothing to pick: just show where they are. */}
+        {me.branches.length === 1 && (
+          <div className="branch-picker">
+            <span className="muted">Branch</span>
+            <span className="branch-name">{me.branches[0].name}</span>
+          </div>
+        )}
+        {me.branches.length > 1 && (
           <div className="branch-picker">
             <label className="muted" htmlFor="branch-picker">
               Branch
