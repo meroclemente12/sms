@@ -119,15 +119,30 @@ export default function Board() {
   const y = useCallback((iso: string) => ((Date.parse(iso) - dayStartMs) / 60000 - startMin) * PX_PER_MIN, [dayStartMs, startMin])
   const height = (endMin - startMin) * PX_PER_MIN
 
-  function minuteAt(e: { clientY: number; currentTarget: Element }, grabOffsetMin = 0): number {
+  /** Snaps to the nearest step (dragging), or with `floor` to the 15-minute cell under the pointer. */
+  function minuteAt(e: { clientY: number; currentTarget: Element }, grabOffsetMin = 0, floor = false): number {
     const rect = e.currentTarget.getBoundingClientRect()
     const raw = startMin + (e.clientY - rect.top) / PX_PER_MIN - grabOffsetMin
-    return Math.max(startMin, Math.min(endMin - STEP, Math.round(raw / STEP) * STEP))
+    const snapped = (floor ? Math.floor(raw / STEP) : Math.round(raw / STEP)) * STEP
+    return Math.max(startMin, Math.min(endMin - STEP, snapped))
+  }
+
+  // --- Hover: highlight the lane (column) and the 15-minute row under the pointer ----
+  const [hover, setHover] = useState<{ lane: string; minute: number } | null>(null)
+
+  function onLaneMove(e: MouseEvent<HTMLDivElement>, lane: Lane) {
+    // Over a booking the click opens that booking, so no slot is highlighted.
+    if (e.target !== e.currentTarget) {
+      if (hover) setHover(null)
+      return
+    }
+    const minute = minuteAt(e, 0, true)
+    if (hover?.lane !== lane.id || hover.minute !== minute) setHover({ lane: lane.id, minute })
   }
 
   function laneClick(e: MouseEvent<HTMLDivElement>, lane: Lane) {
     if (e.target !== e.currentTarget) return
-    const m = minuteAt(e)
+    const m = minuteAt(e, 0, true)
     setNewBooking({
       walkIn: false,
       day,
@@ -258,7 +273,7 @@ export default function Board() {
           >
             <div className="lane-head corner" />
             {lanes.map((l) => (
-              <div key={l.id} className="lane-head">
+              <div key={l.id} className={`lane-head${hover?.lane === l.id ? ' hover-col' : ''}`}>
                 {l.colour && <span className="swatch" style={{ background: l.colour }} />}
                 <strong>{l.title}</strong>
                 <span className="muted small">{l.sub}</span>
@@ -271,14 +286,22 @@ export default function Board() {
                   {clockIn(zonedIso(day, hhmm(m), tz), tz)}
                 </span>
               ))}
+              {hover && (
+                <span className="hover-time" style={{ top: (hover.minute - startMin) * PX_PER_MIN, height: STEP * PX_PER_MIN }}>
+                  {clockIn(zonedIso(day, hhmm(hover.minute), tz), tz)}
+                </span>
+              )}
             </div>
 
             {lanes.map((lane) => (
               <div
                 key={lane.id}
-                className="lane"
+                className={`lane${hover?.lane === lane.id ? ' hover-col' : ''}`}
                 style={{ height }}
                 onClick={(e) => laneClick(e, lane)}
+                onMouseMove={(e) => onLaneMove(e, lane)}
+                onMouseLeave={() => setHover(null)}
+                onDragStart={() => setHover(null)}
                 onDragOver={(e) => onDragOver(e, lane)}
                 onDragLeave={() => setDropHint(null)}
                 onDrop={(e) => void onDrop(e, lane)}
@@ -287,6 +310,12 @@ export default function Board() {
                 {hours.map((m) => (
                   <div key={m} className="hour-line" style={{ top: (m - startMin) * PX_PER_MIN }} />
                 ))}
+                {hover && (
+                  <div
+                    className={hover.lane === lane.id ? 'hover-cell' : 'hover-row'}
+                    style={{ top: (hover.minute - startMin) * PX_PER_MIN, height: STEP * PX_PER_MIN }}
+                  />
+                )}
                 {lane.shifts && offShift(lane.shifts, day, tz, startMin, endMin).map(([a, b]) => (
                   <div key={a} className="off-shift" style={{ top: (a - startMin) * PX_PER_MIN, height: (b - a) * PX_PER_MIN }} />
                 ))}

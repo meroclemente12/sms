@@ -166,6 +166,10 @@ button.ghost {
   gap: 6px;
 }
 
+.branch-name {
+  font-weight: 600;
+}
+
 .who {
   margin-left: auto;
   display: flex;
@@ -787,6 +791,48 @@ tr.selected td {
     color-mix(in srgb, var(--line) 45%, transparent) 23px,
     color-mix(in srgb, var(--line) 45%, transparent) 24px
   );
+}
+
+/* Hover: the lane (column) and the 15-minute row a click would book. */
+.lane.hover-col {
+  background-color: color-mix(in srgb, var(--accent) 6%, transparent);
+}
+
+.lane-head.hover-col {
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+
+.hover-row,
+.hover-cell {
+  position: absolute;
+  left: 0;
+  right: 0;
+  pointer-events: none;
+}
+
+.hover-row {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+}
+
+.hover-cell {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.time-gutter .hover-time {
+  left: 0;
+  right: 0;
+  transform: none;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: 6px;
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface));
+  color: var(--ink);
+  font-weight: 600;
+  z-index: 1;
 }
 
 .hour-line {
