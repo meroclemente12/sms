@@ -616,6 +616,48 @@ def test_day_board(world):
     )
 
 
+def test_group_booking_with_male_and_female_therapists(world):
+    a = world.a
+    h = world.login("desk@banahaw.ph")
+    guests = [
+        {"preferred_gender": "male"},
+        {"preferred_gender": "female", "guest_name": "Lea"},
+    ]
+    slots = world.client.post(
+        f"/branches/{a.branch.id}/slots",
+        json={
+            "variant_id": str(a.swedish60.id),
+            "date": "2026-11-02",
+            "guests": guests,
+            "limit": 1,
+        },
+        headers=h,
+    )
+    assert slots.status_code == 200, slots.text
+    (slot,) = slots.json()
+    b = _book(
+        world,
+        h,
+        starts_at=slot["starts_at"],
+        guests=[{**g, **p} for g, p in zip(guests, slot["pairs"], strict=True)],
+    )
+    names = {i["preferred_gender"]: i["therapist_name"] for i in b["items"]}
+    assert names == {"male": "Ben", "female": "Ana"}
+    assert b["guest_count"] == 2 and b["total"] == "1600.00"
+
+    board = world.client.get(
+        f"/branches/{a.branch.id}/board", params={"date": "2026-11-02"}, headers=h
+    ).json()
+    assert {(i["guest_count"], i["couples"]) for i in board["items"]} == {(2, False)}
+
+    too_many = world.client.post(
+        f"/branches/{a.branch.id}/slots",
+        json={"variant_id": str(a.swedish60.id), "date": "2026-11-02", "guests": [{}] * 13},
+        headers=h,
+    )
+    assert too_many.status_code == 422
+
+
 # --- Clients ---------------------------------------------------------------------------
 
 

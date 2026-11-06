@@ -268,6 +268,113 @@ def find_couples(
     raise NotAvailable("Not enough free therapists for a couples booking")
 
 
+MAX_GROUP = 12
+
+
+def find_group(
+    session: Session,
+    branch_id: uuid.UUID,
+    variant_id: uuid.UUID,
+    starts_at: datetime,
+    wishes: list[GuestWish],
+    *,
+    prefer: list[Pair] | None = None,
+) -> tuple[Pair, ...]:
+    """A therapist and a bed for every guest of a group, all starting together.
+
+    For a one-guest service booked for several people (a family, a barkada). Each guest
+    gets their own therapist and bed; wishes such as "2 male, 1 female, rest any" are
+    honoured. The most specific wishes are served first (a named therapist, then a gender,
+    then anyone), so the "any" guests take whoever is left.
+    """
+    variant = session.get(ServiceVariant, variant_id)
+    if variant is None or not variant.active:
+        raise NotAvailable("Unknown service")
+    service = variant.service
+    w = window_for(variant, service, starts_at)
+    therapists = free_therapists(session, branch_id, service, w)
+    beds = sorted(
+        free_beds(session, branch_id, service, w),
+        key=lambda b: b.room.room_type == RoomType.couples,
+    )
+    n = len(wishes)
+    if len(beds) < n:
+        raise NotAvailable(f"Only {len(beds)} free bed(s) at that time for {n} guests")
+
+    def preferred(i: int) -> Pair | None:
+        return prefer[i] if prefer and i < len(prefer) else None
+
+    order = sorted(
+        range(n), key=lambda i: (wishes[i].therapist_id is None, wishes[i].gender is None)
+    )
+    # A therapist a guest asked for (or already has, when moving) is kept for that guest.
+    claimed = {wishes[i].therapist_id for i in range(n) if wishes[i].therapist_id}
+    claimed |= {p.therapist_id for i in range(n) if (p := preferred(i))}
+    used_t: set[uuid.UUID] = set()
+    chosen_t: dict[int, Therapist] = {}
+    for i in order:
+        wish, mine = wishes[i], preferred(i)
+        options = [
+            t
+            for t in therapists
+            if t.id not in used_t
+            and (wish.therapist_id is None or t.id == wish.therapist_id)
+            and (wish.gender is None or t.gender == wish.gender)
+        ]
+        if not options:
+            if wish.therapist_id:
+                raise NotAvailable("The requested therapist is not free at that time")
+            if wish.gender:
+                want = sum(1 for x in wishes if x.gender == wish.gender and not x.therapist_id)
+                raise NotAvailable(f"Not enough free {wish.gender} therapists for {want} guest(s)")
+            raise NotAvailable(f"Not enough free therapists for {n} guests")
+        options.sort(
+            key=lambda t: (
+                not (mine and t.id == mine.therapist_id),
+                t.id in claimed and not (mine and t.id == mine.therapist_id),
+            )
+        )
+        chosen_t[i] = options[0]
+        used_t.add(options[0].id)
+
+    used_b: set[uuid.UUID] = set()
+    chosen_b: dict[int, Bed] = {}
+    bed_order = sorted(range(n), key=lambda i: wishes[i].bed_id is None)
+    claimed_b = {wishes[i].bed_id for i in range(n) if wishes[i].bed_id}
+    claimed_b |= {p.bed_id for i in range(n) if (p := preferred(i))}
+    for i in bed_order:
+        wish, mine = wishes[i], preferred(i)
+        options = [
+            b for b in beds if b.id not in used_b and (wish.bed_id is None or b.id == wish.bed_id)
+        ]
+        if not options:
+            raise NotAvailable("The requested bed is not free at that time")
+        options.sort(
+            key=lambda b: (
+                not (mine and b.id == mine.bed_id),
+                b.id in claimed_b and not (mine and b.id == mine.bed_id),
+            )
+        )
+        chosen_b[i] = options[0]
+        used_b.add(options[0].id)
+    return tuple(Pair(chosen_t[i].id, chosen_b[i].id, chosen_b[i].room_id) for i in range(n))
+
+
+def guest_prices(service: Service, total: Decimal, guests: int) -> list[Decimal]:
+    """A couples price covers both guests; a one-guest service is charged per guest."""
+    if service.guest_count == 1:
+        return [total] * guests
+    return split_price(total, guests)
+
+
+def check_guest_count(service: Service, guests: int) -> None:
+    if service.guest_count == 1:
+        if not 1 <= guests <= MAX_GROUP:
+            raise ValueError(f"Book 1 to {MAX_GROUP} guests for {service.name}")
+    elif guests != service.guest_count:
+        raise ValueError(f"{service.name} needs {service.guest_count} guest(s)")
+
+
 def split_price(total: Decimal, guests: int) -> list[Decimal]:
     """The menu price is for the whole booking; a couples price is shared by both guests
     (any odd centavo goes to the first guest), so the booking total equals the menu."""
@@ -308,8 +415,7 @@ def create_booking(
     if variant is None:
         raise NotAvailable("Unknown service")
     service = variant.service
-    if len(guests) != service.guest_count:
-        raise ValueError(f"{service.name} needs {service.guest_count} guest(s)")
+    check_guest_count(service, len(guests))
     w = window_for(variant, service, starts_at)
     price = branch_price(session, branch_id, variant)
 
@@ -322,7 +428,7 @@ def create_booking(
         notes=notes,
         created_by=user_id,
     )
-    for g, item_price in zip(guests, split_price(price, len(guests)), strict=True):
+    for g, item_price in zip(guests, guest_prices(service, price, len(guests)), strict=True):
         booking.items.append(
             BookingItem(
                 tenant_id=tenant_id,
@@ -391,8 +497,9 @@ def pick_pairs(
     variant = session.get(ServiceVariant, variant_id)
     if variant is None or not variant.active:
         raise NotAvailable("Unknown service")
-    if len(wishes) != variant.service.guest_count:
-        raise ValueError(f"{variant.service.name} needs {variant.service.guest_count} guest(s)")
+    check_guest_count(variant.service, len(wishes))
+    if variant.service.guest_count == 1 and len(wishes) > 1:
+        return find_group(session, branch_id, variant_id, starts_at, wishes, prefer=prefer)
     if len(wishes) == 2:
         w1, w2 = wishes
         return find_couples(
@@ -508,11 +615,18 @@ def reschedule(
     variant = session.get(ServiceVariant, variant_id or old_variant.id)
     if variant is None or not variant.active:
         raise NotAvailable("Unknown service")
-    if variant.service.guest_count != len(items):
+    if variant.service.guest_count != old_variant.service.guest_count:
         raise ValueError("Change a couples booking only to another couples service")
     current = [Pair(i.therapist_id, i.bed_id, i.bed.room_id) for i in items]
     if wishes is None:
         wishes = [GuestWish() for _ in items]
+    # A guest who asked for a male or female therapist keeps that wish when moved,
+    # unless the desk picked a therapist by name.
+    if len(wishes) == len(items):
+        wishes = [
+            w if w.therapist_id else GuestWish(None, w.gender or i.preferred_gender, w.bed_id)
+            for w, i in zip(wishes, items, strict=True)
+        ]
     before = {
         "starts_at": items[0].starts_at.isoformat(),
         "variant_id": str(old_variant.id),
@@ -523,7 +637,9 @@ def reschedule(
     prices = (
         [i.price for i in items]
         if variant.id == old_variant.id
-        else split_price(branch_price(session, booking.branch_id, variant), len(items))
+        else guest_prices(
+            variant.service, branch_price(session, booking.branch_id, variant), len(items)
+        )
     )
     try:
         with without_booking(session, booking) as handle:

@@ -282,7 +282,7 @@ function MoveForm({
       <label className="check">
         <input type="checkbox" checked={keep} onChange={(e) => setKeep(e.target.checked)} />
         Keep the same therapist{booking.items.length > 1 ? 's' : ''} (
-        {booking.items.map((i) => i.therapist_name).join(' and ')})
+        {booking.items.map((i) => i.therapist_name).join(', ')})
       </label>
       <SlotPicker
         branchId={booking.branch_id}

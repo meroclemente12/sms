@@ -356,3 +356,98 @@ def test_history_keeps_the_order_things_happened(session, spa):
         "booking.checked_in",
         "booking.in_service",
     ]
+
+
+# --- Group bookings ------------------------------------------------------------------
+
+
+def _teach_cora_swedish(session, spa):
+    session.add(
+        m.TherapistSkill(
+            tenant_id=spa.tenant.id, therapist_id=spa.cora.id, service_id=spa.swedish60.service_id
+        )
+    )
+    session.flush()
+
+
+def test_group_gets_one_therapist_and_bed_each_with_gender_counts(session, spa):
+    _teach_cora_swedish(session, spa)
+    wishes = [GuestWish(gender="male"), GuestWish(gender="female"), GuestWish()]
+    pairs = pick_pairs(session, spa.branch.id, spa.swedish60.id, at(10), wishes)
+    assert len(therapists(pairs)) == 3 and len(beds(pairs)) == 3
+    assert pairs[0].therapist_id == spa.ben.id
+    assert pairs[1].therapist_id in {spa.ana.id, spa.cora.id}
+    # Single rooms are used before the couples room.
+    assert {spa.bed_a.id, spa.bed_b.id} <= beds(pairs)
+
+    b = book(
+        session,
+        spa,
+        None,
+        at(10),
+        guests=[
+            GuestRequest(pair=p, preferred_gender=w.gender)
+            for p, w in zip(pairs, wishes, strict=True)
+        ],
+    )
+    # A one-guest service is charged per guest.
+    assert [i.price for i in b.items] == [Decimal("800")] * 3
+
+
+def test_group_refuses_when_not_enough_therapists_of_a_gender(session, spa):
+    _teach_cora_swedish(session, spa)
+    with pytest.raises(NotAvailable, match="male"):
+        pick_pairs(
+            session,
+            spa.branch.id,
+            spa.swedish60.id,
+            at(10),
+            [GuestWish(gender="male"), GuestWish(gender="male")],
+        )
+    with pytest.raises(NotAvailable, match="bed"):
+        pick_pairs(session, spa.branch.id, spa.swedish60.id, at(10), [GuestWish()] * 5)
+    # "Any" guests do not take the only male therapist from a guest who wants one.
+    pairs = pick_pairs(
+        session,
+        spa.branch.id,
+        spa.swedish60.id,
+        at(10),
+        [GuestWish(), GuestWish(), GuestWish(gender="male")],
+    )
+    assert pairs[2].therapist_id == spa.ben.id
+
+
+def test_group_slots_and_reschedule_keep_gender_wishes(session, spa):
+    _teach_cora_swedish(session, spa)
+    book(session, spa, Pair(spa.ben.id, spa.bed_a.id, spa.bed_a.room_id), at(10))
+    wishes = [GuestWish(gender="male"), GuestWish(gender="female")]
+    slots = find_slots(
+        session, spa.branch.id, spa.swedish60.id, wishes, after=at(10), until=at(13), limit=1
+    )
+    assert slots[0].starts_at > at(10)  # Ben is busy at 10:00
+    slots = find_slots(
+        session, spa.branch.id, spa.swedish60.id, wishes, after=at(11, 30), until=at(13), limit=1
+    )
+    pairs = slots[0].pairs
+    b = book(
+        session,
+        spa,
+        None,
+        at(11, 30),
+        guests=[
+            GuestRequest(pair=p, preferred_gender=w.gender)
+            for p, w in zip(pairs, wishes, strict=True)
+        ],
+    )
+    reschedule(session, b, starts_at=at(14))
+    by_gender = {i.preferred_gender: i.therapist_id for i in b.items}
+    assert by_gender["male"] == spa.ben.id
+    assert by_gender["female"] in {spa.ana.id, spa.cora.id}
+    assert {i.starts_at for i in b.items} == {at(14)}
+
+
+def test_couples_service_is_still_two_guests_only(session, spa):
+    with pytest.raises(ValueError):
+        pick_pairs(session, spa.branch.id, spa.couples60.id, at(10), [GuestWish()] * 3)
+    with pytest.raises(ValueError):
+        pick_pairs(session, spa.branch.id, spa.swedish60.id, at(10), [GuestWish()] * 13)
