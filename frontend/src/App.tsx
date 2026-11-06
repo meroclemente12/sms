@@ -7,6 +7,7 @@ import Board from './pages/Board'
 import Clients from './pages/Clients'
 import BranchesPage from './pages/setup/BranchesPage'
 import ChannelsPage from './pages/setup/ChannelsPage'
+import DiscountCodesPage from './pages/setup/DiscountCodesPage'
 import PaymentMethodsPage from './pages/setup/PaymentMethodsPage'
 import Payments from './pages/Payments'
 import SchedulePage from './pages/setup/SchedulePage'
@@ -39,6 +40,7 @@ function Routed() {
             <Route path="setup/schedule" element={<SchedulePage />} />
             <Route path="setup/channels" element={<ChannelsPage />} />
             <Route path="setup/payment-methods" element={<PaymentMethodsPage />} />
+            <Route path="setup/discount-codes" element={<DiscountCodesPage />} />
           </>
         )}
         {isAdmin && <Route path="setup/staff" element={<StaffPage />} />}

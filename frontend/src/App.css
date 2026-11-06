@@ -1512,4 +1512,35 @@ button.small-btn {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+/* Discount codes */
+.discount-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: flex-end;
+}
+
+.discount-line > span {
+  padding: 6px 0;
+}
+
+fieldset.picks {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  min-width: 0;
+}
+
+fieldset.picks legend {
+  font-size: 0.85em;
+  padding: 0 4px;
+}
+
+table.compact td,
+table.compact th {
+  padding: 4px 8px;
+  font-size: 0.9em;
 }
