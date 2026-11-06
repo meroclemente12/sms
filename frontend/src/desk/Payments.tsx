@@ -76,11 +76,14 @@ export function Checkout({
   busy,
   onCancel,
   onDone,
+  onBooking,
 }: {
   booking: Booking
   busy: boolean
   onCancel: () => void
   onDone: (payments: PaymentLineIn[]) => void
+  /** The booking changed here (a discount code was put on or taken off). */
+  onBooking: (b: Booking) => void
 }) {
   const { data, error } = useMethods(booking.branch_id)
   const methods = (data ?? []).filter((m) => m.active)
@@ -107,6 +110,14 @@ export function Checkout({
     <div className="inline-form column">
       <h3>Check out</h3>
       <ErrorNote message={error} />
+      <DiscountBox
+        booking={booking}
+        onBooking={(b) => {
+          // The bill changed, so start the payment lines again from the new total.
+          setLines(null)
+          onBooking(b)
+        }}
+      />
       {data && methods.length === 0 && <p className="note">This branch has no payment methods. A manager can add them in Setup.</p>}
       {current.map((l, i) => (
         <LineFields
@@ -131,6 +142,11 @@ export function Checkout({
         </button>
       )}
       <p className="muted small">
+        {booking.discount && (
+          <>
+            {peso(booking.subtotal)} − {peso(booking.discount.amount)} {booking.discount.code} ={' '}
+          </>
+        )}
         Total {peso(String(due))} · paid {peso(String(paid))}
         {paid !== due && <strong className="warn"> · {paid < due ? `${peso(String(due - paid))} short` : `${peso(String(paid - due))} over`}</strong>}
       </p>
@@ -141,6 +157,53 @@ export function Checkout({
         <button onClick={onCancel}>Back</button>
       </div>
     </div>
+  )
+}
+
+/** Put a discount code on the bill, or take it off, before check-out. */
+function DiscountBox({ booking, onBooking }: { booking: Booking; onBooking: (b: Booking) => void }) {
+  const [code, setCode] = useState('')
+  const { busy, error, run } = useAction()
+  const d = booking.discount
+  if (d)
+    return (
+      <div className="discount-line">
+        <span>
+          Discount <strong className="mono">{d.code}</strong>
+          {d.description && <span className="muted"> · {d.description}</span>}: −{peso(d.amount)}
+        </span>
+        <button
+          type="button"
+          className="ghost"
+          disabled={busy}
+          onClick={() =>
+            void run(async () => onBooking(await api<Booking>(`/bookings/${booking.id}/discount`, { method: 'DELETE' })))
+          }
+        >
+          Remove
+        </button>
+        <ErrorNote message={error} />
+      </div>
+    )
+  return (
+    <form
+      className="discount-line"
+      onSubmit={(e) => {
+        e.preventDefault()
+        void run(async () => {
+          onBooking(await api<Booking>(`/bookings/${booking.id}/discount`, { method: 'PUT', json: { code: code.trim() } }))
+          setCode('')
+        })
+      }}
+    >
+      <Field label="Discount code (optional)">
+        <input value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="e.g. BDAY20" maxLength={40} />
+      </Field>
+      <button type="submit" disabled={busy || !code.trim()}>
+        Apply
+      </button>
+      <ErrorNote message={error} />
+    </form>
   )
 }
 

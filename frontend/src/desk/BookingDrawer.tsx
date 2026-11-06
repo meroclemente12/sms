@@ -94,7 +94,13 @@ export default function BookingDrawer({
             ))}
             <dt>Price</dt>
             <dd>
+              {b.discount && (
+                <>
+                  <s className="muted">{peso(b.subtotal)}</s>{' '}
+                </>
+              )}
               {peso(b.total)}
+              {b.discount && <span className="tag">{b.discount.code}</span>}
               {b.amount_paid !== null && <span className="muted"> · paid {peso(b.amount_paid)}</span>}
             </dd>
             <dt>Client</dt>
@@ -152,7 +158,16 @@ export default function BookingDrawer({
           <ErrorNote message={action.error} />
 
           {mode === 'checkout' && (
-            <Checkout booking={b} busy={action.busy} onCancel={() => setMode('view')} onDone={(payments) => void setStatus('completed', { payments })} />
+            <Checkout
+              booking={b}
+              busy={action.busy}
+              onCancel={() => setMode('view')}
+              onDone={(payments) => void setStatus('completed', { payments })}
+              onBooking={(next) => {
+                setData(next)
+                onChanged()
+              }}
+            />
           )}
           {mode === 'cancel' && (
             <CancelForm busy={action.busy} onBack={() => setMode('view')} onCancel={(reason) => void setStatus('cancelled', { reason: reason || null })} />
@@ -368,6 +383,8 @@ function eventText(e: BookingEvent, tz: string, names: Names): string {
       .join(' and ')}`
   }
   if (EVENT_LABEL[e.event_type]) return EVENT_LABEL[e.event_type]
+  if (e.event_type === 'discount.applied') return `Discount ${String(p.code)}: −${peso(String(p.amount))}`
+  if (e.event_type === 'discount.removed') return `Discount ${String(p.code)} removed`
   if (e.event_type.startsWith('payment.')) {
     const what = PAYMENT_EVENT[e.event_type] ?? 'Payment changed'
     let text = `${what}: ${peso(String(p.amount))} ${String(p.method)}`

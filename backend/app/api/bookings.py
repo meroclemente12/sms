@@ -16,6 +16,8 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import DeskSession, Staff, StaffSession, ensure_branch
 from app.api.payments import PaymentIn, PaymentOut, payments_for_booking
+from app.discounts import redemption_for
+from app.discounts import refresh as refresh_discount
 from app.lifecycle import InvalidTransition, transition
 from app.models import (
     Bed,
@@ -218,6 +220,13 @@ class ClientRef(BaseModel):
     allergies: str | None
 
 
+class DiscountOut(BaseModel):
+    code_id: uuid.UUID
+    code: str
+    description: str | None
+    amount: Decimal
+
+
 class BookingOut(BaseModel):
     id: uuid.UUID
     branch_id: uuid.UUID
@@ -232,7 +241,9 @@ class BookingOut(BaseModel):
     guest_count: int
     starts_at: datetime
     ends_at: datetime
-    total: Decimal
+    subtotal: Decimal = Field(description="Menu prices of all items")
+    discount: DiscountOut | None = None
+    total: Decimal = Field(description="What the guest pays: subtotal minus the discount")
     notes: str | None
     amount_paid: Decimal | None
     cancel_reason: str | None
@@ -275,6 +286,15 @@ def _out(db: Session, b: Booking, *, with_events: bool = False) -> BookingOut:
     paid = (b.attributes or {}).get("amount_paid")
     if payments:
         paid = sum((p.amount for p in payments), Decimal(0))
+    subtotal = sum((i.price for i in items), Decimal(0))
+    r = redemption_for(db, b.id)
+    discount = (
+        DiscountOut(
+            code_id=r.code_id, code=r.code.code, description=r.code.description, amount=r.amount
+        )
+        if r
+        else None
+    )
     return BookingOut(
         id=b.id,
         branch_id=b.branch_id,
@@ -295,7 +315,9 @@ def _out(db: Session, b: Booking, *, with_events: bool = False) -> BookingOut:
         guest_count=len(items),
         starts_at=items[0].starts_at,
         ends_at=items[0].ends_at,
-        total=sum((i.price for i in items), Decimal(0)),
+        subtotal=subtotal,
+        discount=discount,
+        total=subtotal - (discount.amount if discount else 0),
         notes=b.notes,
         amount_paid=Decimal(paid) if paid is not None else None,
         cancel_reason=(b.attributes or {}).get("cancel_reason"),
@@ -413,6 +435,7 @@ def edit_booking(ctx: DeskSession, booking_id: uuid.UUID, body: BookingEdit) -> 
             )
         )
         db.flush()
+        refresh_discount(db, booking)
     return _out(db, booking, with_events=True)
 
 
@@ -442,6 +465,8 @@ def post_reschedule(ctx: DeskSession, booking_id: uuid.UUID, body: RescheduleIn)
         raise HTTPException(409, str(e)) from e
     except (NotAvailable, ValueError) as e:
         raise HTTPException(422, str(e)) from e
+    db.refresh(booking)
+    refresh_discount(db, booking)
     return _out(db, booking, with_events=True)
 
 

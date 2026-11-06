@@ -280,6 +280,13 @@ export interface BookingEvent {
   occurred_at: string
 }
 
+export interface BookingDiscount {
+  code_id: string
+  code: string
+  description: string | null
+  amount: string
+}
+
 export interface Booking {
   id: string
   branch_id: string
@@ -294,6 +301,10 @@ export interface Booking {
   guest_count: number
   starts_at: string
   ends_at: string
+  /** Menu prices of all items. */
+  subtotal: string
+  discount: BookingDiscount | null
+  /** What the guest pays: subtotal minus the discount. */
   total: string
   notes: string | null
   amount_paid: string | null
@@ -430,4 +441,47 @@ export interface PaymentLineIn {
   method_id: string
   amount: string
   reference: string | null
+}
+
+export type DiscountKind = 'percent' | 'fixed'
+
+export interface DiscountCodeIn {
+  code: string
+  description: string | null
+  kind: DiscountKind
+  value: string
+  starts_on: string | null
+  ends_on: string | null
+  max_uses: number | null
+  once_per_client: boolean
+  /** Empty = every branch. */
+  branch_ids: string[]
+  /** Empty = every service. */
+  service_ids: string[]
+  active: boolean
+}
+
+export interface DiscountCode extends DiscountCodeIn {
+  id: string
+  uses: number
+  discount_total: string
+  created_at: string
+}
+
+export interface DiscountUse {
+  booking_id: string
+  booking_status: BookingStatus
+  client_name: string
+  branch_name: string
+  amount: string
+  redeemed_by_name: string | null
+  redeemed_at: string
+  counted: boolean
+}
+
+export interface DiscountQuote {
+  code: string
+  description: string | null
+  eligible: string
+  amount: string
 }
