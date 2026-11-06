@@ -38,6 +38,7 @@ from app.models import (
 )
 from app.payments import PaymentError, record_payment
 from app.scheduling import (
+    MAX_GROUP,
     GuestRequest,
     GuestWish,
     NotAvailable,
@@ -115,7 +116,7 @@ class SlotsIn(BaseModel):
     variant_id: uuid.UUID
     date: dt.date | None = Field(default=None, description="Search this day (branch calendar)")
     after: datetime | None = Field(default=None, description="Or search from this moment")
-    guests: list[WishIn] = Field(min_length=1, max_length=2)
+    guests: list[WishIn] = Field(min_length=1, max_length=MAX_GROUP)
     exclude_booking_id: uuid.UUID | None = Field(
         default=None, description="Treat this booking's own slots as free (when moving it)"
     )
@@ -183,7 +184,7 @@ class BookingIn(BaseModel):
     channel_id: uuid.UUID
     variant_id: uuid.UUID
     starts_at: datetime
-    guests: list[GuestIn] = Field(min_length=1, max_length=2)
+    guests: list[GuestIn] = Field(min_length=1, max_length=MAX_GROUP)
     notes: str | None = None
     check_in_now: bool = False
 
@@ -565,7 +566,8 @@ class BoardItem(BaseModel):
     channel_name: str
     therapist_requested: bool
     preferred_gender: str | None
-    guest_count: int
+    guest_count: int = Field(description="Guests in the whole booking")
+    couples: bool
     has_notes: bool
 
 
@@ -658,6 +660,10 @@ def board(
     )
     if not include_cancelled:
         q = q.where(BookingItem.status.notin_([BookingStatus.cancelled, BookingStatus.no_show]))
+    rows = list(db.execute(q))
+    sizes: dict[uuid.UUID, int] = {}
+    for _i, b, *_ in rows:
+        sizes[b.id] = sizes.get(b.id, 0) + 1
     items = [
         BoardItem(
             id=i.id,
@@ -676,10 +682,11 @@ def board(
             channel_name=channel_name,
             therapist_requested=i.therapist_requested,
             preferred_gender=i.preferred_gender,
-            guest_count=svc.guest_count,
+            guest_count=sizes.get(b.id, 1),
+            couples=svc.guest_count == 2,
             has_notes=bool(b.notes),
         )
-        for i, b, client_name, svc, v, channel_name in db.execute(q)
+        for i, b, client_name, svc, v, channel_name in rows
     ]
     return BoardOut(
         date=day,

@@ -359,6 +359,7 @@ export interface BoardItem extends Span {
   therapist_requested: boolean
   preferred_gender: PreferredGender | null
   guest_count: number
+  couples: boolean
   has_notes: boolean
 }
 

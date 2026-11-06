@@ -24,6 +24,45 @@ interface GuestForm {
 }
 
 const NO_GUEST: GuestForm = { therapistId: '', gender: '', name: '' }
+const MAX_GROUP = 12
+
+type GenderFilter = '' | PreferredGender
+
+/** All / Male / Female: filters the therapist list and is the guest's gender wish. */
+function GenderChoice({ value, onChange, label }: { value: GenderFilter; onChange: (g: GenderFilter) => void; label: string }) {
+  const options: [GenderFilter, string][] = [
+    ['', 'All'],
+    ['male', 'Male'],
+    ['female', 'Female'],
+  ]
+  return (
+    <div className="field">
+      <span className="field-label">{label}</span>
+      <div className="segmented-buttons" role="group" aria-label={label}>
+        {options.map(([g, text]) => (
+          <button type="button" key={text} className={value === g ? 'on' : ''} aria-pressed={value === g} onClick={() => onChange(g)}>
+            {text}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function Count({ label, value, max, onChange }: { label: string; value: number; max: number; onChange: (n: number) => void }) {
+  return (
+    <Field label={label}>
+      <input
+        type="number"
+        inputMode="numeric"
+        min={0}
+        max={max}
+        value={value}
+        onChange={(e) => onChange(Math.max(0, Math.min(max, Math.floor(Number(e.target.value) || 0))))}
+      />
+    </Field>
+  )
+}
 
 /** New booking (phone, email) or walk-in, in one panel. */
 export default function NewBooking({
@@ -60,6 +99,9 @@ export default function NewBooking({
   const [variantId, setVariantId] = useState('')
   const [day, setDay] = useState(start.walkIn ? todayIn(tz) : start.day)
   const [guests, setGuests] = useState<GuestForm[]>([{ ...NO_GUEST, therapistId: start.therapistId ?? '' }])
+  const [size, setSize] = useState(1)
+  const [males, setMales] = useState(0)
+  const [females, setFemales] = useState(0)
   const [slot, setSlot] = useState<Slot | null>(null)
   const [notes, setNotes] = useState('')
   const { busy, error, run } = useAction()
@@ -67,10 +109,21 @@ export default function NewBooking({
   const channel = channelId || (start.walkIn ? walkInChannel?.id : setup.data?.channels.find((c) => c.code === 'phone')?.id) || ''
   const price = setup.data?.prices.find((p) => p.variant_id === variantId)
   const service = setup.data?.services.find((s) => s.id === price?.service_id)
-  const guestCount = service?.guest_count ?? 1
+  const couples = service?.guest_count === 2
+  // A group: several guests, each with their own therapist and bed, all starting together.
+  const group = !couples && size > 1
+  const guestCount = couples ? 2 : size
+  const anyCount = Math.max(0, size - males - females)
   const shownGuests = useMemo(
-    () => Array.from({ length: guestCount }, (_, i) => guests[i] ?? NO_GUEST),
-    [guests, guestCount],
+    () =>
+      Array.from({ length: guestCount }, (_, i) => {
+        const g = guests[i] ?? NO_GUEST
+        if (!group) return g
+        // In a group the male / female counts decide each guest's therapist gender.
+        const gender: GenderFilter = i < males ? 'male' : i < males + females ? 'female' : ''
+        return { ...g, gender }
+      }),
+    [guests, guestCount, group, males, females],
   )
   const wishes: GuestWish[] = useMemo(
     () =>
@@ -84,6 +137,33 @@ export default function NewBooking({
   const skilled = (setup.data?.therapists ?? []).filter(
     (t) => t.active && (!service || t.skill_service_ids.includes(service.id)),
   )
+  const unitPrice = price ? Number(price.branch_price ?? price.default_price) : 0
+  const total = couples ? unitPrice : unitPrice * size
+
+  function changeSize(n: number) {
+    const next = Math.max(1, Math.min(MAX_GROUP, n))
+    setSize(next)
+    const m = Math.min(males, next)
+    setMales(m)
+    setFemales(Math.min(females, next - m))
+  }
+
+  function changeCount(which: 'male' | 'female', n: number) {
+    if (which === 'male') {
+      setMales(n)
+      setFemales((f) => Math.min(f, size - n))
+    } else {
+      setFemales(n)
+      setMales((m) => Math.min(m, size - n))
+    }
+    // A named therapist of the other gender no longer fits; let the system pick again.
+    setGuests((gs) => gs.map((g) => ({ ...g, therapistId: '' })))
+  }
+
+  function chooseGender(i: number, gender: GenderFilter) {
+    const current = skilled.find((t) => t.id === shownGuests[i].therapistId)
+    setGuest(i, { gender, therapistId: current && gender && current.gender !== gender ? '' : (current?.id ?? '') })
+  }
 
   function setGuest(i: number, patch: Partial<GuestForm>) {
     setGuests((gs) => {
@@ -188,42 +268,50 @@ export default function NewBooking({
                 ))}
               </select>
             </Field>
-            {shownGuests.map((g, i) => (
-              <div className="guest-row" key={i}>
-                {guestCount > 1 && (
-                  <p className="guest-title">
-                    Guest {i + 1}
-                    {i === 0 && client ? ` (${client.name})` : ''}
-                  </p>
+            {!couples && (
+              <div className="group-size">
+                <Count label="Guests" value={size} max={MAX_GROUP} onChange={(n) => changeSize(Math.max(1, n))} />
+                {group && (
+                  <>
+                    <Count label="Male therapists" value={males} max={size} onChange={(n) => changeCount('male', n)} />
+                    <Count label="Female therapists" value={females} max={size} onChange={(n) => changeCount('female', n)} />
+                    <p className="muted small group-any">
+                      {anyCount === 0 ? 'Every guest has a gender set.' : `${anyCount} with any therapist.`}
+                    </p>
+                  </>
                 )}
-                {i > 0 && (
-                  <Field label="Guest name">
-                    <input value={g.name} onChange={(e) => setGuest(i, { name: e.target.value })} placeholder="Optional" />
-                  </Field>
-                )}
-                <Field label="Therapist">
-                  <select value={g.therapistId} onChange={(e) => setGuest(i, { therapistId: e.target.value })}>
-                    <option value="">Any therapist</option>
-                    {skilled.map((t) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} ({t.gender === 'female' ? 'F' : t.gender === 'male' ? 'M' : '–'})
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="Gender preference">
-                  <select
-                    value={g.gender}
-                    disabled={Boolean(g.therapistId)}
-                    onChange={(e) => setGuest(i, { gender: e.target.value as GuestForm['gender'] })}
-                  >
-                    <option value="">No preference</option>
-                    <option value="female">Female therapist</option>
-                    <option value="male">Male therapist</option>
-                  </select>
-                </Field>
               </div>
-            ))}
+            )}
+            {shownGuests.map((g, i) => {
+              const choices = skilled.filter((t) => !g.gender || t.gender === g.gender || t.id === g.therapistId)
+              return (
+                <div className="guest-row" key={i}>
+                  {guestCount > 1 && (
+                    <p className="guest-title">
+                      Guest {i + 1}
+                      {i === 0 && client ? ` (${client.name})` : ''}
+                      {group && <span className="tag">{g.gender ? `${g.gender} therapist` : 'any therapist'}</span>}
+                    </p>
+                  )}
+                  {i > 0 && (
+                    <Field label="Guest name">
+                      <input value={g.name} onChange={(e) => setGuest(i, { name: e.target.value })} placeholder="Optional" />
+                    </Field>
+                  )}
+                  {!group && <GenderChoice label="Therapist gender" value={g.gender} onChange={(gender) => chooseGender(i, gender)} />}
+                  <Field label="Therapist">
+                    <select value={g.therapistId} onChange={(e) => setGuest(i, { therapistId: e.target.value })}>
+                      <option value="">{g.gender ? `Any ${g.gender} therapist` : 'Any therapist'}</option>
+                      {choices.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t.gender === 'female' ? 'F' : t.gender === 'male' ? 'M' : '–'})
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                </div>
+              )
+            })}
           </section>
 
           <section>
@@ -261,7 +349,8 @@ export default function NewBooking({
           <div className="form-actions sticky-actions">
             <button className="primary" disabled={busy || !client || !slot || !channel}>
               {start.walkIn ? 'Book and check in' : 'Book'}
-              {price && ` · ${peso(price.branch_price ?? price.default_price)}`}
+              {group && ` ${size} guests`}
+              {price && ` · ${peso(total)}`}
             </button>
             <button type="button" onClick={onClose}>
               Cancel

@@ -1474,6 +1474,44 @@ button.small-btn {
   }
 }
 
+/* Group bookings: guest count and how many male / female therapists. */
+.group-size {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 8px;
+  align-items: end;
+}
+
+.group-size input {
+  width: 100%;
+}
+
+.group-any {
+  grid-column: 1 / -1;
+  margin: 0;
+}
+
+.guest-title .tag {
+  margin-left: 6px;
+  font-weight: 400;
+}
+
+/* Free therapists at the hovered time. */
+.free-summary {
+  margin: 0 0 8px;
+  min-height: 1.4em;
+}
+
+.hover-free {
+  display: block;
+  padding: 0 6px;
+  font-size: 11px;
+  line-height: 24px;
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 /* Discount codes */
 .discount-line {
   display: flex;

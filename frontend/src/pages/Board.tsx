@@ -17,6 +17,9 @@ const REFRESH_MS = 20_000
 const DEFAULT_TZ = 'Asia/Manila'
 
 type View = 'therapists' | 'beds'
+type GenderFilter = 'all' | 'male' | 'female'
+
+const ACTIVE = new Set(['booked', 'confirmed', 'checked_in', 'in_service', 'completed'])
 
 interface Lane {
   id: string
@@ -24,6 +27,15 @@ interface Lane {
   sub: string
   colour: string | null
   shifts: Span[] | null // null = always open (beds)
+}
+
+function readGender(): GenderFilter {
+  try {
+    const g = localStorage.getItem('banahaw.boardGender')
+    return g === 'male' || g === 'female' ? g : 'all'
+  } catch {
+    return 'all'
+  }
 }
 
 function readView(): View {
@@ -38,6 +50,7 @@ export default function Board() {
   const { branch } = useAuth()
   const [day, setDay] = useState(() => todayIn(DEFAULT_TZ))
   const [view, setViewState] = useState<View>(readView)
+  const [gender, setGenderState] = useState<GenderFilter>(readGender)
   const [showCancelled, setShowCancelled] = useState(false)
   const [newBooking, setNewBooking] = useState<BookingStart | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
@@ -70,6 +83,15 @@ export default function Board() {
     }
   }
 
+  function setGender(g: GenderFilter) {
+    setGenderState(g)
+    try {
+      localStorage.setItem('banahaw.boardGender', g)
+    } catch {
+      // ignore
+    }
+  }
+
   const names: Names = useMemo(() => {
     const t = new Map(board?.therapists.map((x) => [x.id, x.name]))
     const b = new Map(board?.beds.map((x) => [x.id, `${x.room_name} · ${x.label}`]))
@@ -88,6 +110,7 @@ export default function Board() {
       }))
     // Therapists on shift today first, then the rest.
     return [...board.therapists]
+      .filter((t) => gender === 'all' || t.gender === gender)
       .sort((a, b) => Number(b.shifts.length > 0) - Number(a.shifts.length > 0))
       .map((t) => ({
         id: t.id,
@@ -99,7 +122,7 @@ export default function Board() {
         colour: t.colour,
         shifts: t.shifts,
       }))
-  }, [board, view, tz])
+  }, [board, view, tz, gender])
 
   // The visible hours: opening to closing, stretched to fit anything booked outside them.
   const [startMin, endMin] = useMemo(() => {
@@ -129,6 +152,26 @@ export default function Board() {
 
   // --- Hover: highlight the lane (column) and the 15-minute row under the pointer ----
   const [hover, setHover] = useState<{ lane: string; minute: number } | null>(null)
+
+  /** Therapists free for the whole hovered 15 minutes: on shift, not booked, not blocked. */
+  const freeAtHover = useMemo(() => {
+    if (!board || !hover) return null
+    const from = Date.parse(zonedIso(day, hhmm(hover.minute), tz))
+    const to = from + STEP * 60000
+    const overlaps = (a: string, b: string) => Date.parse(a) < to && Date.parse(b) > from
+    const busy = new Set<string>()
+    for (const it of board.items) if (ACTIVE.has(it.status) && overlaps(it.starts_at, it.ends_at)) busy.add(it.therapist_id)
+    for (const bl of board.blocks) if (bl.therapist_id && overlaps(bl.starts_at, bl.ends_at)) busy.add(bl.therapist_id)
+    const free = board.therapists.filter(
+      (t) =>
+        !busy.has(t.id) && t.shifts.some((sh) => Date.parse(sh.starts_at) <= from && Date.parse(sh.ends_at) >= to),
+    )
+    return {
+      male: free.filter((t) => t.gender === 'male').length,
+      female: free.filter((t) => t.gender === 'female').length,
+      total: free.length,
+    }
+  }, [board, hover, day, tz])
 
   function onLaneMove(e: MouseEvent<HTMLDivElement>, lane: Lane) {
     // Over a booking the click opens that booking, so no slot is highlighted.
@@ -223,6 +266,15 @@ export default function Board() {
           <h1>{longDayLabel(day)}</h1>
         </div>
         <div className="board-actions">
+          {view === 'therapists' && (
+            <div className="segmented-buttons" role="group" aria-label="Therapist gender">
+              {(['all', 'male', 'female'] as const).map((g) => (
+                <button key={g} className={gender === g ? 'on' : ''} aria-pressed={gender === g} onClick={() => setGender(g)}>
+                  {g === 'all' ? 'All' : g === 'male' ? 'Male' : 'Female'}
+                </button>
+              ))}
+            </div>
+          )}
           <div className="segmented-buttons" role="group" aria-label="Show lanes by">
             <button className={view === 'therapists' ? 'on' : ''} aria-pressed={view === 'therapists'} onClick={() => setView('therapists')}>
               Therapists
@@ -247,6 +299,16 @@ export default function Board() {
           ? 'No bookings yet.'
           : `${counts.total} guest${counts.total === 1 ? '' : 's'}: ${counts.parts.join(', ')}.`}{' '}
         Click an empty time to book it. Drag a booking to move it.
+      </p>
+      <p className="free-summary" aria-live="polite">
+        {hover && freeAtHover ? (
+          <>
+            Free at {clockIn(zonedIso(day, hhmm(hover.minute), tz), tz)}: <strong>{freeAtHover.male}</strong> male ·{' '}
+            <strong>{freeAtHover.female}</strong> female · <strong>{freeAtHover.total}</strong> in all
+          </>
+        ) : (
+          <span className="muted">Point at a time to see how many male and female therapists are free.</span>
+        )}
       </p>
       <ErrorNote message={error} />
       <ErrorNote message={move.error} />
@@ -314,7 +376,13 @@ export default function Board() {
                   <div
                     className={hover.lane === lane.id ? 'hover-cell' : 'hover-row'}
                     style={{ top: (hover.minute - startMin) * PX_PER_MIN, height: STEP * PX_PER_MIN }}
-                  />
+                  >
+                    {hover.lane === lane.id && freeAtHover && (
+                      <span className="hover-free" title="Therapists free at this time: male, female, in all">
+                        {freeAtHover.male} M · {freeAtHover.female} F · {freeAtHover.total} free
+                      </span>
+                    )}
+                  </div>
                 )}
                 {lane.shifts && offShift(lane.shifts, day, tz, startMin, endMin).map(([a, b]) => (
                   <div key={a} className="off-shift" style={{ top: (a - startMin) * PX_PER_MIN, height: (b - a) * PX_PER_MIN }} />
@@ -375,7 +443,7 @@ export default function Board() {
             const bookedDay = dayOf(b.starts_at, tz)
             if (bookedDay !== day) setDay(bookedDay)
             else void reload()
-            setFlash(`Booked ${b.client.name} at ${clockIn(b.starts_at, tz)} with ${b.items.map((i) => i.therapist_name).join(' and ')}`)
+            setFlash(`Booked ${b.client.name} at ${clockIn(b.starts_at, tz)} with ${listNames(b.items.map((i) => i.therapist_name))}`)
             setOpenId(b.id)
           }}
         />
@@ -414,7 +482,7 @@ function BookingBlock({
   onDragStart: (e: DragEvent<HTMLButtonElement>, item: BoardItem) => void
   onDragEnd: () => void
 }) {
-  // Couples bookings move from the details panel so both guests stay together.
+  // Couples and group bookings move from the details panel so every guest stays together.
   const draggable = (item.status === 'booked' || item.status === 'confirmed') && item.guest_count === 1
   const who = item.guest_name ? `${item.guest_name} (with ${item.client_name})` : item.client_name
   return (
@@ -430,7 +498,11 @@ function BookingBlock({
       >
         <span className="b-line">
           <strong>{who}</strong>
-          {item.guest_count > 1 && <span className="tag">couples</span>}
+          {item.couples ? (
+            <span className="tag">couples</span>
+          ) : (
+            item.guest_count > 1 && <span className="tag">group of {item.guest_count}</span>
+          )}
           {item.therapist_requested && <span className="tag" title="Therapist requested">★</span>}
           {item.has_notes && <span className="tag" title="Has notes">✎</span>}
         </span>
@@ -480,4 +552,8 @@ function countByStatus(items: BoardItem[]) {
     n.cancelled && `${n.cancelled} cancelled or no-show`,
   ].filter(Boolean) as string[]
   return { total: items.length, parts }
+}
+
+function listNames(names: string[]): string {
+  return names.length <= 2 ? names.join(' and ') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
 }
