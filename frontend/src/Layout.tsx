@@ -9,6 +9,7 @@ const SETUP_LINKS = [
   { to: '/setup/schedule', label: 'Shifts and time off' },
   { to: '/setup/channels', label: 'Booking channels' },
   { to: '/setup/payment-methods', label: 'Payment methods' },
+  { to: '/setup/discount-codes', label: 'Discount codes' },
 ]
 
 const NAV_KEY = 'banahaw.sidebar'

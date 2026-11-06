@@ -26,7 +26,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -95,6 +95,11 @@ class UserRole(enum.StrEnum):
 class PaymentKind(enum.StrEnum):
     cash = "cash"
     cashless = "cashless"
+
+
+class DiscountKind(enum.StrEnum):
+    percent = "percent"
+    fixed = "fixed"
 
 
 class PaymentStatus(enum.StrEnum):
@@ -465,6 +470,74 @@ class Payment(TimestampMixin, Base):
     check_note: Mapped[str | None] = mapped_column(Text)
 
     method: Mapped[PaymentMethod] = relationship()
+
+
+# --- Discounts -----------------------------------------------------------------------
+
+
+class DiscountCode(TimestampMixin, Base):
+    """A code the desk types at check-out, e.g. BDAY20 for 20% off.
+
+    Empty ``branch_ids`` / ``service_ids`` mean every branch / every service."""
+
+    __tablename__ = "discount_codes"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "code"),
+        _enum_check("kind", DiscountKind),
+        CheckConstraint("value > 0", name="discount_positive"),
+        CheckConstraint("kind <> 'percent' OR value <= 100", name="percent_at_most_100"),
+        CheckConstraint("max_uses IS NULL OR max_uses > 0", name="max_uses_positive"),
+        CheckConstraint(
+            "starts_on IS NULL OR ends_on IS NULL OR ends_on >= starts_on", name="dates_in_order"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = _tenant_fk()
+    # Stored upper case; the desk can type it in any case.
+    code: Mapped[str] = mapped_column(String(40))
+    description: Mapped[str | None] = mapped_column(String(200))
+    kind: Mapped[str] = mapped_column(String(10), default=DiscountKind.percent)
+    value: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    starts_on: Mapped[date | None] = mapped_column(Date)
+    ends_on: Mapped[date | None] = mapped_column(Date)
+    max_uses: Mapped[int | None] = mapped_column(Integer)
+    once_per_client: Mapped[bool] = mapped_column(Boolean, default=False)
+    branch_ids: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), server_default="{}", default=list
+    )
+    service_ids: Mapped[list[uuid.UUID]] = mapped_column(
+        ARRAY(UUID(as_uuid=True)), server_default="{}", default=list
+    )
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+
+
+class DiscountRedemption(Base):
+    """A code used on a booking. One code per booking. A cancelled or no-show booking
+    keeps its row for the record but no longer counts as a use."""
+
+    __tablename__ = "discount_redemptions"
+    __table_args__ = (
+        UniqueConstraint("booking_id"),
+        CheckConstraint("amount > 0", name="redemption_positive"),
+    )
+
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = _tenant_fk()
+    code_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("discount_codes.id", ondelete="RESTRICT"), index=True
+    )
+    booking_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("bookings.id", ondelete="CASCADE"))
+    client_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clients.id"), index=True)
+    branch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("branches.id"))
+    amount: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    redeemed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    redeemed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+    code: Mapped[DiscountCode] = relationship()
 
 
 # --- Access --------------------------------------------------------------------------
