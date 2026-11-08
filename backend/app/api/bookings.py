@@ -36,6 +36,7 @@ from app.models import (
     TimeBlock,
     User,
 )
+from app.pay import branch_today, clocked_in_today
 from app.payments import PaymentError, record_payment
 from app.scheduling import (
     MAX_GROUP,
@@ -530,6 +531,9 @@ class BoardTherapist(BaseModel):
     gender: str
     colour: str | None
     shifts: list[Span]
+    clocked_in_at: datetime | None = Field(
+        default=None, description="When they clocked in, if clocked in right now"
+    )
 
 
 class BoardBed(BaseModel):
@@ -601,6 +605,7 @@ def board(
         .order_by(Shift.starts_at)
     ):
         shifts.setdefault(s.therapist_id, []).append(Span(starts_at=s.starts_at, ends_at=s.ends_at))
+    clocked = clocked_in_today(db, branch) if day == branch_today(branch) else {}
     therapists = [
         BoardTherapist(
             id=t.id,
@@ -608,6 +613,7 @@ def board(
             gender=t.gender,
             colour=t.display_colour,
             shifts=shifts.get(t.id, []),
+            clocked_in_at=clocked.get(t.id),
         )
         for t in db.scalars(
             select(Therapist)

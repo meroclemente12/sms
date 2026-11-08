@@ -114,16 +114,28 @@ export default function NewBooking({
   const group = !couples && size > 1
   const guestCount = couples ? 2 : size
   const anyCount = Math.max(0, size - males - females)
+  const isToday = day === todayIn(tz)
+  // Today only therapists the desk has clocked in can take guests.
+  const skilled = useMemo(
+    () =>
+      (setup.data?.therapists ?? []).filter(
+        (t) => t.active && (!service || t.skill_service_ids.includes(service.id)) && (!isToday || t.clocked_in),
+      ),
+    [setup.data, service, isToday],
+  )
+  const clockedInCount = (setup.data?.therapists ?? []).filter((t) => t.active && t.clocked_in).length
   const shownGuests = useMemo(
     () =>
       Array.from({ length: guestCount }, (_, i) => {
-        const g = guests[i] ?? NO_GUEST
+        const picked = guests[i] ?? NO_GUEST
+        // A therapist chosen earlier (or clicked on the board) who can't take this guest is dropped.
+        const g = picked.therapistId && setup.data && !skilled.some((t) => t.id === picked.therapistId) ? { ...picked, therapistId: '' } : picked
         if (!group) return g
         // In a group the male / female counts decide each guest's therapist gender.
         const gender: GenderFilter = i < males ? 'male' : i < males + females ? 'female' : ''
         return { ...g, gender }
       }),
-    [guests, guestCount, group, males, females],
+    [guests, guestCount, group, males, females, skilled, setup.data],
   )
   const wishes: GuestWish[] = useMemo(
     () =>
@@ -133,9 +145,6 @@ export default function NewBooking({
         bed_id: i === 0 && guestCount === 1 && start.bedId ? start.bedId : null,
       })),
     [shownGuests, guestCount, start.bedId],
-  )
-  const skilled = (setup.data?.therapists ?? []).filter(
-    (t) => t.active && (!service || t.skill_service_ids.includes(service.id)),
   )
   const unitPrice = price ? Number(price.branch_price ?? price.default_price) : 0
   const total = couples ? unitPrice : unitPrice * size
@@ -182,7 +191,6 @@ export default function NewBooking({
     return [...groups.entries()]
   }, [setup.data])
 
-  const isToday = day === todayIn(tz)
   const after = start.walkIn && isToday ? new Date().toISOString() : null
 
   async function submit(e: FormEvent) {
@@ -281,6 +289,13 @@ export default function NewBooking({
                   </>
                 )}
               </div>
+            )}
+            {isToday && (
+              <p className={clockedInCount === 0 ? 'note' : 'muted small'}>
+                {clockedInCount === 0
+                  ? 'No therapist is clocked in yet. Clock therapists in on the day board to book them today.'
+                  : `Today only the ${clockedInCount} clocked-in therapist${clockedInCount === 1 ? '' : 's'} can be booked.`}
+              </p>
             )}
             {shownGuests.map((g, i) => {
               const choices = skilled.filter((t) => !g.gender || t.gender === g.gender || t.id === g.therapistId)

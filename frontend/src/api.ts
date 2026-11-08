@@ -125,8 +125,13 @@ export interface Variant {
   label: string
   duration_min: number
   default_price: string
+  /** Paid to the therapist for each guest served with this option. */
+  commission: string
   active: boolean
 }
+
+/** Banahaw's commission by service length; the server uses it when none is typed. */
+export const DEFAULT_COMMISSION: Record<number, number> = { 60: 120, 75: 140, 90: 192, 100: 224, 130: 272, 165: 296, 180: 368 }
 
 export interface Service {
   id: string
@@ -161,6 +166,8 @@ export interface Therapist {
   display_colour: string | null
   active: boolean
   skill_service_ids: string[]
+  /** Clocked in at the desk right now (available for booking today). */
+  clocked_in: boolean
 }
 
 export interface Shift {
@@ -326,6 +333,8 @@ export interface BoardTherapist {
   gender: Gender
   colour: string | null
   shifts: Span[]
+  /** Set only on today's board, when the therapist is clocked in. */
+  clocked_in_at: string | null
 }
 
 export interface BoardBed {
@@ -485,4 +494,50 @@ export interface DiscountQuote {
   description: string | null
   eligible: string
   amount: string
+}
+
+export type QuotaBasis = 'sales' | 'services'
+
+export interface QuotaTier {
+  threshold: string
+  bonus: string
+}
+
+export interface PaySettings {
+  daily_allowance: string
+  quota_basis: QuotaBasis
+  quota_tiers: QuotaTier[]
+  /** 0 = Monday ... 6 = Sunday */
+  week_starts_on: number
+}
+
+export interface PayDay {
+  date: string
+  clocked_in: boolean
+  services: number
+  sales: string
+  commission: string
+}
+
+export interface TherapistPay {
+  therapist_id: string
+  name: string
+  services: number
+  sales: string
+  commission: string
+  days_worked: number
+  allowance: string
+  quota_progress: string
+  bonus: string
+  bonus_threshold: string | null
+  total: string
+  days: PayDay[]
+}
+
+export interface WeekPay {
+  week_start: string
+  week_end: string
+  settings: PaySettings
+  therapists: TherapistPay[]
+  total: string
 }

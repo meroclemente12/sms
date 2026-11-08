@@ -5,6 +5,7 @@ Hard rules (never overridden):
   * a bed hosts one booking item at a time (cleanup buffer included), and only services
     its bed type allows;
   * the therapist's shift covers the whole service (buffers excluded: cleanup is bed work);
+    for today, being clocked in at the front desk takes the place of the shift;
   * no overlapping time block on the therapist or the bed.
 
 The final guard against two desks booking the same slot at once is the pair of
@@ -19,6 +20,7 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import ROUND_DOWN, Decimal
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, exists, func, not_, select
 from sqlalchemy.exc import IntegrityError
@@ -31,6 +33,7 @@ from app.models import (
     BookingEvent,
     BookingItem,
     BookingStatus,
+    Branch,
     BranchServicePrice,
     Room,
     RoomType,
@@ -38,9 +41,11 @@ from app.models import (
     ServiceVariant,
     Shift,
     Therapist,
+    TherapistAttendance,
     TherapistSkill,
     TimeBlock,
 )
+from app.pay import branch_today
 
 
 class SlotTaken(Exception):
@@ -95,6 +100,25 @@ def branch_price(session: Session, branch_id: uuid.UUID, variant: ServiceVariant
     return variant.default_price
 
 
+def _on_duty(session: Session, branch_id: uuid.UUID, w: Window):
+    """Today: clocked in at the desk. Other days: a shift covers the service."""
+    branch = session.get(Branch, branch_id)
+    today = branch_today(branch)
+    if w.starts_at.astimezone(ZoneInfo(branch.timezone)).date() == today:
+        return exists().where(
+            TherapistAttendance.therapist_id == Therapist.id,
+            TherapistAttendance.branch_id == branch_id,
+            TherapistAttendance.clock_out_at.is_(None),
+            TherapistAttendance.work_date == today,
+        )
+    return exists().where(
+        Shift.therapist_id == Therapist.id,
+        Shift.branch_id == branch_id,
+        Shift.starts_at <= w.starts_at,
+        Shift.ends_at >= w.ends_at,
+    )
+
+
 def free_therapists(
     session: Session,
     branch_id: uuid.UUID,
@@ -129,12 +153,7 @@ def free_therapists(
                 TherapistSkill.therapist_id == Therapist.id,
                 TherapistSkill.service_id == service.id,
             ),
-            exists().where(
-                Shift.therapist_id == Therapist.id,
-                Shift.branch_id == branch_id,
-                Shift.starts_at <= w.starts_at,
-                Shift.ends_at >= w.ends_at,
-            ),
+            _on_duty(session, branch_id, w),
             not_(
                 exists().where(
                     BookingItem.therapist_id == Therapist.id,

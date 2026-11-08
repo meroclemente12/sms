@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../../api'
+import { DEFAULT_COMMISSION } from '../../api'
 import type { BedType, Price, Service, Variant } from '../../api'
 import { useAuth } from '../../auth'
 import { Card, Empty, ErrorNote, Field, ReadOnlyNote, StatusPill } from '../../components/ui'
@@ -8,6 +9,11 @@ import { useAction, useLoad } from '../../components/hooks'
 
 const peso = (v: string | number) =>
   Number(v).toLocaleString('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 2 })
+
+/** Empty commission box: the server fills in the default for the length. */
+const commissionJson = (c: string) => (c.trim() === '' ? null : c)
+const commissionHint = (minutes: number) =>
+  DEFAULT_COMMISSION[minutes] !== undefined ? `₱${DEFAULT_COMMISSION[minutes]} comm.` : 'Commission'
 
 function ServiceForm({ initial, bedTypes, onDone }: { initial?: Service; bedTypes: BedType[]; onDone: () => void }) {
   const [name, setName] = useState(initial?.name ?? '')
@@ -23,6 +29,7 @@ function ServiceForm({ initial, bedTypes, onDone }: { initial?: Service; bedType
   const [label, setLabel] = useState('60 min')
   const [minutes, setMinutes] = useState(60)
   const [price, setPrice] = useState('')
+  const [commission, setCommission] = useState('')
   const { busy, error, run } = useAction()
 
   async function submit(e: FormEvent) {
@@ -43,7 +50,7 @@ function ServiceForm({ initial, bedTypes, onDone }: { initial?: Service; bedType
         const svc = await api<Service>('/services', { method: 'POST', json })
         await api(`/services/${svc.id}/variants`, {
           method: 'POST',
-          json: { label, duration_min: minutes, default_price: price },
+          json: { label, duration_min: minutes, default_price: price, commission: commissionJson(commission) },
         })
       }
     })
@@ -91,6 +98,16 @@ function ServiceForm({ initial, bedTypes, onDone }: { initial?: Service; bedType
           <Field label="Default price (₱)">
             <input type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} required />
           </Field>
+          <Field label="Therapist commission (₱)" hint="Leave empty to use the standard amount for the length">
+            <input
+              type="number"
+              min={0}
+              step="0.01"
+              value={commission}
+              onChange={(e) => setCommission(e.target.value)}
+              placeholder={DEFAULT_COMMISSION[minutes] !== undefined ? String(DEFAULT_COMMISSION[minutes]) : '0'}
+            />
+          </Field>
         </>
       )}
       <div className="form-actions">
@@ -111,13 +128,17 @@ function VariantRow({ v, canEdit, onChange }: { v: Variant; canEdit: boolean; on
   const [label, setLabel] = useState(v.label)
   const [minutes, setMinutes] = useState(v.duration_min)
   const [price, setPrice] = useState(v.default_price)
+  const [commission, setCommission] = useState(v.commission)
   const [active, setActive] = useState(v.active)
   const { busy, error, run } = useAction()
 
   async function save(e: FormEvent) {
     e.preventDefault()
     const ok = await run(() =>
-      api(`/variants/${v.id}`, { method: 'PUT', json: { label, duration_min: minutes, default_price: price, active } }),
+      api(`/variants/${v.id}`, {
+        method: 'PUT',
+        json: { label, duration_min: minutes, default_price: price, commission: commissionJson(commission), active },
+      }),
     )
     if (ok) {
       setEdit(false)
@@ -131,6 +152,9 @@ function VariantRow({ v, canEdit, onChange }: { v: Variant; canEdit: boolean; on
         <span>{v.label}</span>
         {v.label !== `${v.duration_min} min` && <span className="muted">{v.duration_min} min</span>}
         <span>{peso(v.default_price)}</span>
+        <span className="muted" title="Therapist commission per guest">
+          Commission {peso(v.commission)}
+        </span>
         {!v.active && <StatusPill active={false} />}
         {canEdit && <button onClick={() => setEdit(true)}>Edit</button>}
       </li>
@@ -141,6 +165,16 @@ function VariantRow({ v, canEdit, onChange }: { v: Variant; canEdit: boolean; on
         <input value={label} onChange={(e) => setLabel(e.target.value)} aria-label="Option name" required />
         <input type="number" min={5} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} aria-label="Minutes" />
         <input type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} aria-label="Default price" />
+        <input
+          type="number"
+          min={0}
+          step="0.01"
+          value={commission}
+          onChange={(e) => setCommission(e.target.value)}
+          placeholder={commissionHint(minutes)}
+          title="Therapist commission per guest"
+          aria-label="Therapist commission"
+        />
         <label className="check">
           <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active
         </label>
@@ -160,15 +194,20 @@ function AddVariant({ service, onDone }: { service: Service; onDone: () => void 
   const [label, setLabel] = useState('90 min')
   const [minutes, setMinutes] = useState(90)
   const [price, setPrice] = useState('')
+  const [commission, setCommission] = useState('')
   const { busy, error, run } = useAction()
 
   async function submit(e: FormEvent) {
     e.preventDefault()
     const ok = await run(() =>
-      api(`/services/${service.id}/variants`, { method: 'POST', json: { label, duration_min: minutes, default_price: price } }),
+      api(`/services/${service.id}/variants`, {
+        method: 'POST',
+        json: { label, duration_min: minutes, default_price: price, commission: commissionJson(commission) },
+      }),
     )
     if (ok) {
       setPrice('')
+      setCommission('')
       onDone()
     }
   }
@@ -178,6 +217,16 @@ function AddVariant({ service, onDone }: { service: Service; onDone: () => void 
       <input value={label} onChange={(e) => setLabel(e.target.value)} aria-label="New option name" placeholder="Option name" required />
       <input type="number" min={5} value={minutes} onChange={(e) => setMinutes(Number(e.target.value))} aria-label="Minutes" />
       <input type="number" min={0} step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} placeholder="Price" aria-label="Price" required />
+      <input
+        type="number"
+        min={0}
+        step="0.01"
+        value={commission}
+        onChange={(e) => setCommission(e.target.value)}
+        placeholder={commissionHint(minutes)}
+        title="Therapist commission per guest. Leave empty for the standard amount for the length."
+        aria-label="Therapist commission"
+      />
       <button disabled={busy}>Add option</button>
       <ErrorNote message={error} />
     </form>

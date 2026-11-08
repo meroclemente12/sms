@@ -38,6 +38,7 @@ from app.models import (
     TherapistSkill,
     TimeBlock,
 )
+from app.pay import clocked_in_today, default_commission
 from app.payments import add_default_methods
 
 router = APIRouter(tags=["setup"])
@@ -264,6 +265,9 @@ class VariantIn(BaseModel):
     label: str = Field(min_length=1, max_length=100)
     duration_min: int = Field(gt=0, le=600)
     default_price: Decimal = Field(ge=0)
+    commission: Decimal | None = Field(
+        default=None, ge=0, description="Therapist's commission; empty = the default for the length"
+    )
     active: bool = True
 
 
@@ -273,7 +277,15 @@ class VariantOut(Out):
     label: str
     duration_min: int
     default_price: Decimal
+    commission: Decimal
     active: bool
+
+
+def _apply_variant(v: ServiceVariant, body: VariantIn) -> None:
+    _apply(v, body, exclude={"commission"})
+    v.commission = (
+        body.commission if body.commission is not None else default_commission(body.duration_min)
+    )
 
 
 class ServiceIn(BaseModel):
@@ -334,7 +346,7 @@ def create_variant(ctx: AdminSession, service_id: uuid.UUID, body: VariantIn) ->
     session, staff = ctx
     _get(session, Service, service_id, "Service")
     v = ServiceVariant(tenant_id=staff.tenant_id, service_id=service_id)
-    _apply(v, body)
+    _apply_variant(v, body)
     session.add(v)
     _flush(session)
     return v
@@ -344,7 +356,7 @@ def create_variant(ctx: AdminSession, service_id: uuid.UUID, body: VariantIn) ->
 def update_variant(ctx: AdminSession, variant_id: uuid.UUID, body: VariantIn) -> ServiceVariant:
     session, _ = ctx
     v = _get(session, ServiceVariant, variant_id, "Service option")
-    _apply(v, body)
+    _apply_variant(v, body)
     _flush(session)
     return v
 
@@ -442,9 +454,14 @@ class TherapistOut(BaseModel):
     display_colour: str | None
     active: bool
     skill_service_ids: list[uuid.UUID]
+    clocked_in: bool = Field(default=False, description="Clocked in at the desk right now")
 
 
-def _therapist_out(session: Session, t: Therapist) -> TherapistOut:
+def _therapist_out(
+    session: Session, t: Therapist, clocked: dict[uuid.UUID, datetime] | None = None
+) -> TherapistOut:
+    if clocked is None:
+        clocked = clocked_in_today(session, session.get(Branch, t.branch_id))
     skills = session.scalars(
         select(TherapistSkill.service_id).where(TherapistSkill.therapist_id == t.id)
     )
@@ -457,6 +474,7 @@ def _therapist_out(session: Session, t: Therapist) -> TherapistOut:
         display_colour=t.display_colour,
         active=t.active,
         skill_service_ids=list(skills),
+        clocked_in=t.id in clocked,
     )
 
 
@@ -479,7 +497,8 @@ def list_therapists(ctx: StaffSession, branch_id: uuid.UUID) -> list[TherapistOu
     rows = session.scalars(
         select(Therapist).where(Therapist.branch_id == branch_id).order_by(Therapist.name)
     )
-    return [_therapist_out(session, t) for t in rows]
+    clocked = clocked_in_today(session, session.get(Branch, branch_id))
+    return [_therapist_out(session, t, clocked) for t in rows]
 
 
 @router.post("/branches/{branch_id}/therapists", response_model=TherapistOut, status_code=201)

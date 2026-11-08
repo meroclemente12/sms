@@ -1572,6 +1572,8 @@ button.small-btn {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
 /* Discount codes */
 .discount-line {
   display: flex;
@@ -1603,4 +1605,72 @@ table.compact td,
 table.compact th {
   padding: 4px 8px;
   font-size: 0.9em;
+}
+
+/* --- Clock in / out on the day board ----------------------------------------------- */
+
+.clock-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 4px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  background: var(--off);
+  color: var(--muted);
+}
+
+.clock-toggle .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.clock-toggle.on {
+  background: var(--on);
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.clock-toggle.on .dot {
+  background: var(--accent);
+}
+
+/* --- Therapist pay ------------------------------------------------------------------ */
+
+.pay-table td.num,
+.pay-table th.num {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.pay-table tr.pay-total td {
+  font-weight: 600;
+  border-top: 2px solid var(--line);
+}
+
+.pay-table button.link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.pay-days td {
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  font-size: 13px;
+}
+
+.tier-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
 }

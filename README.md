@@ -38,6 +38,14 @@ Design doc: https://claude.ai/artifact/6pfMAsBWf1NBC9jntFHKb6 · Phase 1 backlog
   Nobody but an admin checks a payment they logged themselves.
 - **Payment methods** (Setup): each branch has its own list (Cash, GCash and BPI bank
   transfer to start). Cashless methods can require a reference number.
+- **Clock in / out** (day board, today): each therapist's column has an Available /
+  Clock in switch. Today only clocked-in therapists can be booked (in the booking panel,
+  walk-ins, drag to move and the auto-pick); other days still go by the shift schedule.
+- **Therapist pay** (managers, accountants, admins): one week per page, per therapist:
+  commission for every checked-out guest (set per service option in Services and prices,
+  by length), the daily allowance for each day clocked in, and the weekly quota bonus.
+  Download as CSV. **Pay rules** (Setup, admins change): allowance, quota targets and
+  bonuses, counted in pesos of sales or number of services, and the day the week starts.
 - **Clients**: search, notes, allergies (shown in red wherever the client appears) and
   visit history across branches.
 

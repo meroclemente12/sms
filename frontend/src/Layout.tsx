@@ -10,6 +10,7 @@ const SETUP_LINKS = [
   { to: '/setup/channels', label: 'Booking channels' },
   { to: '/setup/payment-methods', label: 'Payment methods' },
   { to: '/setup/discount-codes', label: 'Discount codes' },
+  { to: '/setup/pay', label: 'Pay rules' },
 ]
 
 const NAV_KEY = 'banahaw.sidebar'
@@ -94,6 +95,7 @@ export default function Layout() {
             </>
           )}
           {canCheckPayments && <NavLink to="/payments">Payments</NavLink>}
+          {canCheckPayments && <NavLink to="/pay">Therapist pay</NavLink>}
           {canManage && (
             <>
               <p className="nav-group">Setup</p>

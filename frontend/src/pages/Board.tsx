@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent, MouseEvent } from 'react'
 import { api } from '../api'
-import type { Board as BoardData, BoardItem, Booking, Span } from '../api'
+import type { Board as BoardData, BoardItem, BoardTherapist, Booking, Span } from '../api'
 import { useAuth } from '../auth'
 import { ErrorNote, StatusBadge } from '../components/ui'
 import { useAction, useLoad } from '../components/hooks'
@@ -26,7 +26,9 @@ interface Lane {
   title: string
   sub: string
   colour: string | null
-  shifts: Span[] | null // null = always open (beds)
+  shifts: Span[] | null // null = always open (beds, or a therapist clocked in today)
+  /** Today's therapist lanes: clocked in (true) or not (false). Undefined otherwise. */
+  clockedIn?: boolean
 }
 
 function readGender(): GenderFilter {
@@ -132,21 +134,36 @@ export default function Board() {
         colour: null,
         shifts: null,
       }))
-    // Therapists on shift today first, then the rest.
+    const isToday = board.date === todayIn(tz)
+    const shiftText = (t: BoardTherapist) =>
+      t.shifts.length > 0 ? t.shifts.map((s) => `${clockIn(s.starts_at, tz)}–${clockIn(s.ends_at, tz)}`).join(', ') : 'Day off'
+    // Today: clocked-in therapists first (only they can be booked). Other days: on shift first.
+    const rank = (t: BoardTherapist) => (isToday ? Number(Boolean(t.clocked_in_at)) * 2 : 0) + Number(t.shifts.length > 0)
     return [...board.therapists]
       .filter((t) => gender === 'all' || t.gender === gender)
-      .sort((a, b) => Number(b.shifts.length > 0) - Number(a.shifts.length > 0))
+      .sort((a, b) => rank(b) - rank(a))
       .map((t) => ({
         id: t.id,
         title: t.name,
-        sub:
-          t.shifts.length > 0
-            ? t.shifts.map((s) => `${clockIn(s.starts_at, tz)}–${clockIn(s.ends_at, tz)}`).join(', ')
-            : 'Day off',
+        sub: !isToday
+          ? shiftText(t)
+          : t.clocked_in_at
+            ? `In since ${clockIn(t.clocked_in_at, tz)}`
+            : 'Not clocked in',
         colour: t.colour,
-        shifts: t.shifts,
+        // Today the clock-in decides availability: open all day when in, closed when out.
+        shifts: !isToday ? t.shifts : t.clocked_in_at ? null : [],
+        clockedIn: isToday ? Boolean(t.clocked_in_at) : undefined,
       }))
   }, [board, view, tz, gender])
+
+  const clock = useAction()
+  async function toggleClock(lane: Lane) {
+    const action = lane.clockedIn ? 'clock-out' : 'clock-in'
+    const ok = await clock.run(() => api(`/therapists/${lane.id}/${action}`, { method: 'POST' }))
+    if (ok) setFlash(`${lane.title} ${lane.clockedIn ? 'clocked out' : 'clocked in'}`)
+    void reload()
+  }
 
   // The visible hours: opening to closing, stretched to fit anything booked outside them.
   const [startMin, endMin] = useMemo(() => {
@@ -186,9 +203,13 @@ export default function Board() {
     const busy = new Set<string>()
     for (const it of board.items) if (ACTIVE.has(it.status) && overlaps(it.starts_at, it.ends_at)) busy.add(it.therapist_id)
     for (const bl of board.blocks) if (bl.therapist_id && overlaps(bl.starts_at, bl.ends_at)) busy.add(bl.therapist_id)
+    const isToday = board.date === todayIn(tz)
     const free = board.therapists.filter(
       (t) =>
-        !busy.has(t.id) && t.shifts.some((sh) => Date.parse(sh.starts_at) <= from && Date.parse(sh.ends_at) >= to),
+        !busy.has(t.id) &&
+        (isToday
+          ? Boolean(t.clocked_in_at)
+          : t.shifts.some((sh) => Date.parse(sh.starts_at) <= from && Date.parse(sh.ends_at) >= to)),
     )
     return {
       male: free.filter((t) => t.gender === 'male').length,
@@ -357,6 +378,7 @@ export default function Board() {
       </p>
       <ErrorNote message={error} />
       <ErrorNote message={move.error} />
+      <ErrorNote message={clock.error} />
       {flash && (
         <p className="flash" role="status">
           {flash}
@@ -384,6 +406,20 @@ export default function Board() {
                 {l.colour && <span className="swatch" style={{ background: l.colour }} />}
                 <strong>{l.title}</strong>
                 <span className="muted small">{l.sub}</span>
+                {l.clockedIn !== undefined && (
+                  <button
+                    className={`clock-toggle${l.clockedIn ? ' on' : ''}`}
+                    role="switch"
+                    aria-checked={l.clockedIn}
+                    aria-label={`${l.title} available for booking`}
+                    title={l.clockedIn ? 'Clocked in. Click to clock out.' : 'Not clocked in. Click to clock in.'}
+                    disabled={clock.busy}
+                    onClick={() => void toggleClock(l)}
+                  >
+                    <span className="dot" aria-hidden="true" />
+                    {l.clockedIn ? 'Available' : 'Clock in'}
+                  </button>
+                )}
               </div>
             ))}
 

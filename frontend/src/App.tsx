@@ -14,6 +14,8 @@ import SchedulePage from './pages/setup/SchedulePage'
 import ServicesPage from './pages/setup/ServicesPage'
 import StaffPage from './pages/setup/StaffPage'
 import TherapistsPage from './pages/setup/TherapistsPage'
+import PaySettingsPage from './pages/setup/PaySettingsPage'
+import TherapistPay from './pages/TherapistPay'
 
 function Routed() {
   const { me, loading, canManage, isAdmin, isAccountant, canCheckPayments } = useAuth()
@@ -32,6 +34,7 @@ function Routed() {
           </>
         )}
         {canCheckPayments && <Route path="payments" element={<Payments />} />}
+        {canCheckPayments && <Route path="pay" element={<TherapistPay />} />}
         {canManage && (
           <>
             <Route path="setup/branches" element={<BranchesPage />} />
@@ -41,6 +44,7 @@ function Routed() {
             <Route path="setup/channels" element={<ChannelsPage />} />
             <Route path="setup/payment-methods" element={<PaymentMethodsPage />} />
             <Route path="setup/discount-codes" element={<DiscountCodesPage />} />
+            <Route path="setup/pay" element={<PaySettingsPage />} />
           </>
         )}
         {isAdmin && <Route path="setup/staff" element={<StaffPage />} />}

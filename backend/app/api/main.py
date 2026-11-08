@@ -3,7 +3,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, bookings, clients, discounts, payments, setup
+from app.api import auth, bookings, clients, discounts, pay, payments, setup
 from app.config import settings
 
 app = FastAPI(title="Banahaw Reservations API", version="0.4.0")
@@ -26,3 +26,4 @@ app.include_router(bookings.router)
 app.include_router(clients.router)
 app.include_router(payments.router)
 app.include_router(discounts.router)
+app.include_router(pay.router)

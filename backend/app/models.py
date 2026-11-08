@@ -222,6 +222,8 @@ class ServiceVariant(TimestampMixin, Base):
     label: Mapped[str] = mapped_column(String(100))
     duration_min: Mapped[int] = mapped_column(Integer)
     default_price: Mapped[Decimal] = mapped_column(Numeric(10, 2))
+    # Paid to the therapist for each guest served with this option (set by its length).
+    commission: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal(0))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     service: Mapped[Service] = relationship(back_populates="variants")
@@ -325,6 +327,33 @@ class Client(TimestampMixin, Base):
     allergies: Mapped[str | None] = mapped_column(Text)
 
 
+class TherapistAttendance(TimestampMixin, Base):
+    """A stretch of time a therapist was clocked in (available for booking).
+
+    The front desk clocks therapists in and out from the day board. Each day with at
+    least one clock-in earns the daily allowance. At most one open row per therapist."""
+
+    __tablename__ = "therapist_attendance"
+    __table_args__ = (
+        CheckConstraint(
+            "clock_out_at IS NULL OR clock_out_at >= clock_in_at", name="attendance_in_order"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = _tenant_fk()
+    therapist_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("therapists.id", ondelete="CASCADE"), index=True
+    )
+    branch_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("branches.id"), index=True)
+    # The branch's calendar day of the clock-in.
+    work_date: Mapped[date] = mapped_column(Date)
+    clock_in_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    clock_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    clocked_in_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    clocked_out_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+
+
 # --- Bookings ------------------------------------------------------------------------
 
 
@@ -396,6 +425,9 @@ class BookingItem(TimestampMixin, Base):
     status: Mapped[str] = mapped_column(String(20), default=BookingStatus.booked)
     therapist_requested: Mapped[bool] = mapped_column(Boolean, default=False)
     preferred_gender: Mapped[str | None] = mapped_column(String(10))
+    # The therapist's commission, fixed when the service is completed so a later change
+    # in Services setup does not rewrite past pay.
+    commission: Mapped[Decimal | None] = mapped_column(Numeric(10, 2))
 
     booking: Mapped[Booking] = relationship(back_populates="items")
     bed: Mapped[Bed] = relationship()
@@ -538,6 +570,39 @@ class DiscountRedemption(Base):
     )
 
     code: Mapped[DiscountCode] = relationship()
+
+
+# --- Therapist pay -------------------------------------------------------------------
+
+
+class QuotaBasis(enum.StrEnum):
+    sales = "sales"  # peso amount of completed services
+    services = "services"  # number of completed services
+
+
+class PaySettings(TimestampMixin, Base):
+    """Spa-wide pay rules: daily allowance and the weekly sales quota bonus.
+
+    ``quota_tiers`` is a list of ``{"threshold": n, "bonus": amount}``; a therapist earns
+    the bonus of the highest threshold reached in the week (not the sum)."""
+
+    __tablename__ = "pay_settings"
+    __table_args__ = (
+        UniqueConstraint("tenant_id"),
+        _enum_check("quota_basis", QuotaBasis),
+        CheckConstraint("daily_allowance >= 0", name="allowance_not_negative"),
+        CheckConstraint("week_starts_on BETWEEN 0 AND 6", name="week_day_allowed"),
+    )
+
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = _tenant_fk()
+    daily_allowance: Mapped[Decimal] = mapped_column(Numeric(10, 2), default=Decimal(250))
+    quota_basis: Mapped[str] = mapped_column(String(20), default=QuotaBasis.sales)
+    quota_tiers: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSONB, server_default="[]", default=list
+    )
+    # 0 = Monday ... 6 = Sunday
+    week_starts_on: Mapped[int] = mapped_column(Integer, default=0)
 
 
 # --- Access --------------------------------------------------------------------------

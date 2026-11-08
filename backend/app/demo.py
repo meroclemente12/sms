@@ -33,6 +33,7 @@ from app.models import (
     UserBranch,
     UserRole,
 )
+from app.pay import clock_in, default_commission
 from app.payments import add_default_methods
 from app.scheduling import GuestRequest, GuestWish, create_booking, pick_pairs
 from app.security import hash_password
@@ -128,6 +129,7 @@ def seed_demo(password: str = DEMO_PASSWORD) -> bool:
                         label=label,
                         duration_min=minutes,
                         default_price=Decimal(price),
+                        commission=default_commission(minutes),
                     )
                 )
 
@@ -221,6 +223,9 @@ def _sample_bookings(tenant_id, tz: ZoneInfo) -> None:
         therapists = {t.name: t for t in session.scalars(select(Therapist))}
         variants = {(v.service.name, v.label): v for v in session.scalars(select(ServiceVariant))}
         today = datetime.now(tz).date()
+        # Today's bookings need therapists clocked in at the desk.
+        for t in therapists.values():
+            clock_in(session, t)
         for offset, hhmm, client, service, label, channel, therapist, status in SAMPLE_BOOKINGS:
             day = today + timedelta(days=offset)
             starts = datetime.combine(day, time.fromisoformat(hhmm), tzinfo=tz)

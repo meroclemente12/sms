@@ -8,6 +8,7 @@ from typing import Any
 from sqlalchemy.orm import Session
 
 from app.models import Booking, BookingEvent, BookingStatus
+from app.pay import fix_commission
 
 S = BookingStatus
 
@@ -41,6 +42,8 @@ def transition(
     booking.status = to
     for item in booking.items:
         item.status = to
+    if to == S.completed:
+        fix_commission(session, booking)
     session.add(
         BookingEvent(
             tenant_id=booking.tenant_id,
