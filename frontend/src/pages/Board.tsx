@@ -92,6 +92,30 @@ export default function Board() {
     }
   }
 
+  // Keyboard shortcuts for the desk. Ignored while typing, with Ctrl/Cmd/Alt held,
+  // or while a booking panel or any other dialog is open.
+  const shortcuts = useRef<(e: KeyboardEvent) => void>(() => {})
+  shortcuts.current = (e: KeyboardEvent) => {
+    if (e.defaultPrevented || e.repeat || e.ctrlKey || e.metaKey || e.altKey) return
+    if (isTyping(e.target) || newBooking || openId || document.querySelector('[role="dialog"], dialog[open]')) return
+    const key = e.key.toLowerCase()
+    const byKey: Record<string, GenderFilter> = { a: 'all', m: 'male', f: 'female' }
+    if (key in byKey) {
+      setGender(byKey[key])
+      setView('therapists') // the gender filter only applies to the therapist lanes
+    } else if (key === 't') setView('therapists')
+    else if (key === 'b') setView('beds')
+    else if (key === 'w') setNewBooking({ walkIn: true, day: todayIn(tz) })
+    else if (key === 'n') setNewBooking({ walkIn: false, day })
+    else return
+    e.preventDefault()
+  }
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => shortcuts.current(e)
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   const names: Names = useMemo(() => {
     const t = new Map(board?.therapists.map((x) => [x.id, x.name]))
     const b = new Map(board?.beds.map((x) => [x.id, `${x.room_name} · ${x.label}`]))
@@ -269,27 +293,48 @@ export default function Board() {
           {view === 'therapists' && (
             <div className="segmented-buttons" role="group" aria-label="Therapist gender">
               {(['all', 'male', 'female'] as const).map((g) => (
-                <button key={g} className={gender === g ? 'on' : ''} aria-pressed={gender === g} onClick={() => setGender(g)}>
-                  {g === 'all' ? 'All' : g === 'male' ? 'Male' : 'Female'}
+                <button
+                  key={g}
+                  className={gender === g ? 'on' : ''}
+                  aria-pressed={gender === g}
+                  aria-keyshortcuts={g[0].toUpperCase()}
+                  title={`Shortcut: ${g[0].toUpperCase()}`}
+                  onClick={() => setGender(g)}
+                >
+                  {g === 'all' ? 'All' : g === 'male' ? 'Male' : 'Female'} <kbd>{g[0].toUpperCase()}</kbd>
                 </button>
               ))}
             </div>
           )}
           <div className="segmented-buttons" role="group" aria-label="Show lanes by">
-            <button className={view === 'therapists' ? 'on' : ''} aria-pressed={view === 'therapists'} onClick={() => setView('therapists')}>
-              Therapists
+            <button
+              className={view === 'therapists' ? 'on' : ''}
+              aria-pressed={view === 'therapists'}
+              aria-keyshortcuts="T"
+              title="Shortcut: T"
+              onClick={() => setView('therapists')}
+            >
+              Therapists <kbd>T</kbd>
             </button>
-            <button className={view === 'beds' ? 'on' : ''} aria-pressed={view === 'beds'} onClick={() => setView('beds')}>
-              Beds
+            <button
+              className={view === 'beds' ? 'on' : ''}
+              aria-pressed={view === 'beds'}
+              aria-keyshortcuts="B"
+              title="Shortcut: B"
+              onClick={() => setView('beds')}
+            >
+              Beds <kbd>B</kbd>
             </button>
           </div>
           <label className="check small">
             <input type="checkbox" checked={showCancelled} onChange={(e) => setShowCancelled(e.target.checked)} />
             Show cancelled
           </label>
-          <button onClick={() => setNewBooking({ walkIn: true, day: today })}>Walk-in</button>
-          <button className="primary" onClick={() => setNewBooking({ walkIn: false, day })}>
-            New booking
+          <button aria-keyshortcuts="W" title="Shortcut: W" onClick={() => setNewBooking({ walkIn: true, day: today })}>
+            Walk-in <kbd>W</kbd>
+          </button>
+          <button className="primary" aria-keyshortcuts="N" title="Shortcut: N" onClick={() => setNewBooking({ walkIn: false, day })}>
+            New booking <kbd>N</kbd>
           </button>
         </div>
       </header>
@@ -552,6 +597,14 @@ function countByStatus(items: BoardItem[]) {
     n.cancelled && `${n.cancelled} cancelled or no-show`,
   ].filter(Boolean) as string[]
   return { total: items.length, parts }
+}
+
+/** True when a key press is going into a text box, dropdown or other editable field. */
+function isTyping(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false
+  if (target.isContentEditable) return true
+  if (target instanceof HTMLInputElement) return !['checkbox', 'radio', 'button', 'submit', 'reset'].includes(target.type)
+  return target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement
 }
 
 function listNames(names: string[]): string {

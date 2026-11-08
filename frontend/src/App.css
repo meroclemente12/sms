@@ -667,6 +667,65 @@ tr.selected td {
   padding-right: 12px;
 }
 
+/* The day board fills the window: the page itself never scrolls, only the calendar does. */
+.app:has(.board-page) {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.app:has(.board-page) .body {
+  min-height: 0;
+}
+
+.app:has(.board-page) .sidenav {
+  overflow-y: auto;
+}
+
+.content:has(.board-page) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.board-page {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.board-page > * {
+  flex-shrink: 0;
+}
+
+.board-page > .board-scroll {
+  flex: 1 1 0;
+  min-height: 160px;
+}
+
+/* Shortcut key hint on the toolbar buttons. */
+.board-toolbar kbd {
+  display: inline-block;
+  min-width: 1.4em;
+  margin-left: 4px;
+  padding: 0 4px;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font: 600 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--muted);
+  text-align: center;
+  vertical-align: 1px;
+}
+
+.board-toolbar button.primary kbd {
+  color: inherit;
+  border-color: currentColor;
+  opacity: 0.8;
+}
+
 .board-toolbar {
   display: flex;
   justify-content: space-between;
@@ -717,7 +776,8 @@ tr.selected td {
 
 .board-scroll {
   overflow: auto;
-  max-height: calc(100vh - 170px);
+  flex: 1;
+  min-height: 0;
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);
