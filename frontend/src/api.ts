@@ -499,6 +499,8 @@ export interface DiscountQuote {
 export type QuotaBasis = 'sales' | 'services'
 
 export interface QuotaTier {
+  /** Days clocked in that week, at least. */
+  min_days: number
   threshold: string
   bonus: string
 }

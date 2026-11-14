@@ -5,9 +5,10 @@ weekly sales quota bonus.
     service option (set by length in Services setup). It is copied onto the item when
     the booking is completed.
   * Allowance: every branch day a therapist was clocked in at least once.
-  * Quota bonus: per week, the bonus of the highest tier the therapist reached, counted
-    either in pesos of completed services (menu price, before discounts) or in number of
-    completed services.
+  * Quota bonus: per week, the biggest bonus among the tiers the therapist reached. A tier
+    needs a minimum number of days clocked in and a sales total, counted either in pesos
+    of completed services (menu price, before discounts; the therapist's commission is
+    not added) or in number of completed services.
 """
 
 from __future__ import annotations
@@ -82,13 +83,19 @@ def week_start(day: date, week_starts_on: int) -> date:
     return day - timedelta(days=(day.weekday() - week_starts_on) % 7)
 
 
-def bonus_for(tiers: list[dict], reached: Decimal) -> tuple[Decimal, Decimal | None]:
-    """(bonus, threshold reached) for the highest tier at or below ``reached``."""
+def bonus_for(
+    tiers: list[dict], reached: Decimal, days_worked: int = 0
+) -> tuple[Decimal, Decimal | None]:
+    """(bonus, sales target) of the best tier reached: enough days worked and enough sales.
+
+    When several tiers are reached the biggest bonus wins (they are not added up)."""
     best: tuple[Decimal, Decimal | None] = (Decimal(0), None)
-    for t in sorted(tiers, key=lambda t: Decimal(str(t["threshold"]))):
+    for t in tiers:
         threshold = Decimal(str(t["threshold"]))
-        if reached >= threshold:
-            best = (Decimal(str(t["bonus"])), threshold)
+        min_days = int(t.get("min_days") or 0)
+        bonus = Decimal(str(t["bonus"]))
+        if reached >= threshold and days_worked >= min_days and bonus >= best[0]:
+            best = (bonus, threshold)
     return best
 
 
@@ -289,7 +296,9 @@ def week_pay(session: Session, branch: Branch, any_day: date) -> WeekPay:
         p.quota_progress = (
             p.sales if settings.quota_basis == QuotaBasis.sales else Decimal(p.services)
         )
-        p.bonus, p.bonus_threshold = bonus_for(settings.quota_tiers or [], p.quota_progress)
+        p.bonus, p.bonus_threshold = bonus_for(
+            settings.quota_tiers or [], p.quota_progress, p.days_worked
+        )
 
     out = WeekPay(week_start=start, week_end=end, settings=settings)
     out.therapists = sorted(people.values(), key=lambda p: p.name.lower())

@@ -1,11 +1,18 @@
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { api } from '../../api'
-import type { PaySettings, QuotaBasis, QuotaTier } from '../../api'
+import type { PaySettings, QuotaBasis } from '../../api'
 import { useAuth } from '../../auth'
 import { Card, ErrorNote, Field } from '../../components/ui'
 import { useAction, useLoad } from '../../components/hooks'
 import { peso } from '../../time'
+
+/** A target as typed: the boxes hold text until saved. */
+interface TierForm {
+  min_days: string
+  threshold: string
+  bonus: string
+}
 
 const WEEK_DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
 
@@ -15,7 +22,7 @@ export default function PaySettingsPage() {
   const { data, error, reload } = useLoad(() => api<PaySettings>('/pay-settings'), [])
   const [allowance, setAllowance] = useState('')
   const [basis, setBasis] = useState<QuotaBasis>('sales')
-  const [tiers, setTiers] = useState<QuotaTier[]>([])
+  const [tiers, setTiers] = useState<TierForm[]>([])
   const [weekStart, setWeekStart] = useState(0)
   const [saved, setSaved] = useState(false)
   const save = useAction()
@@ -24,11 +31,17 @@ export default function PaySettingsPage() {
     if (!data) return
     setAllowance(String(Number(data.daily_allowance)))
     setBasis(data.quota_basis)
-    setTiers(data.quota_tiers.map((t) => ({ threshold: String(Number(t.threshold)), bonus: String(Number(t.bonus)) })))
+    setTiers(
+      data.quota_tiers.map((t) => ({
+        min_days: String(t.min_days ?? 0),
+        threshold: String(Number(t.threshold)),
+        bonus: String(Number(t.bonus)),
+      })),
+    )
     setWeekStart(data.week_starts_on)
   }, [data])
 
-  function setTier(i: number, patch: Partial<QuotaTier>) {
+  function setTier(i: number, patch: Partial<TierForm>) {
     setTiers((ts) => ts.map((t, j) => (j === i ? { ...t, ...patch } : t)))
     setSaved(false)
   }
@@ -41,7 +54,9 @@ export default function PaySettingsPage() {
         json: {
           daily_allowance: allowance || '0',
           quota_basis: basis,
-          quota_tiers: tiers.filter((t) => t.threshold !== '' && t.bonus !== ''),
+          quota_tiers: tiers
+            .filter((t) => t.threshold !== '' && t.bonus !== '')
+            .map((t) => ({ min_days: Number(t.min_days) || 0, threshold: t.threshold, bonus: t.bonus })),
           week_starts_on: weekStart,
         },
       }),
@@ -86,7 +101,7 @@ export default function PaySettingsPage() {
 
           <Card title="Weekly sales quota bonus">
             <p className="muted">
-              Each week a therapist earns the bonus of the highest target they reached (not the sum of all targets).
+              Each week a therapist earns the bonus of a target when they worked at least its number of days and reached its sales. If they reach several targets they get the biggest bonus, not the sum.
             </p>
             <Field label="Count sales as">
               <select
@@ -120,6 +135,17 @@ export default function PaySettingsPage() {
             {tiers.length === 0 && <p className="note">No targets yet, so no bonus is paid. Add the first target below.</p>}
             {tiers.map((t, i) => (
               <div className="tier-row" key={i}>
+                <Field label="Days worked, at least">
+                  <input
+                    type="number"
+                    min={0}
+                    max={7}
+                    step="1"
+                    value={t.min_days}
+                    disabled={!isAdmin}
+                    onChange={(e) => setTier(i, { min_days: e.target.value })}
+                  />
+                </Field>
                 <Field label={unit}>
                   <input
                     type="number"
@@ -159,7 +185,7 @@ export default function PaySettingsPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setTiers((ts) => [...ts, { threshold: '', bonus: '' }])
+                  setTiers((ts) => [...ts, { min_days: '6', threshold: '', bonus: '' }])
                   setSaved(false)
                 }}
               >
@@ -170,11 +196,12 @@ export default function PaySettingsPage() {
               <p className="muted small">
                 {[...tiers]
                   .filter((t) => t.threshold && t.bonus)
-                  .sort((a, b) => Number(a.threshold) - Number(b.threshold))
-                  .map((t) =>
-                    basis === 'sales'
-                      ? `${peso(t.threshold)} in sales → ${peso(t.bonus)}`
-                      : `${t.threshold} services → ${peso(t.bonus)}`,
+                  .sort((a, b) => Number(a.min_days) - Number(b.min_days) || Number(a.threshold) - Number(b.threshold))
+                  .map(
+                    (t) =>
+                      `${Number(t.min_days) > 0 ? `${t.min_days}+ days and ` : ''}${
+                        basis === 'sales' ? `${peso(t.threshold)} in sales` : `${t.threshold} services`
+                      } → ${peso(t.bonus)}`,
                   )
                   .join(' · ')}
               </p>
