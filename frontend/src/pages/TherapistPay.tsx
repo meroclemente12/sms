@@ -73,7 +73,10 @@ export default function TherapistPay() {
             <>
               weekly bonus:{' '}
               {s.quota_tiers
-                .map((t) => (bySales ? `${peso(t.threshold)} sales → ${peso(t.bonus)}` : `${Number(t.threshold)} services → ${peso(t.bonus)}`))
+                .map(
+                  (t) =>
+                    `${t.min_days > 0 ? `${t.min_days}+ days and ` : ''}${bySales ? `${peso(t.threshold)} sales` : `${Number(t.threshold)} services`} → ${peso(t.bonus)}`,
+                )
                 .join(', ')}
               .
             </>

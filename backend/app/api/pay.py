@@ -71,6 +71,7 @@ def post_clock_out(ctx: DeskSession, therapist_id: uuid.UUID) -> ClockOut:
 
 
 class Tier(BaseModel):
+    min_days: int = Field(default=0, ge=0, le=7, description="Days clocked in that week, at least")
     threshold: Decimal = Field(gt=0, description="Pesos of sales, or number of services")
     bonus: Decimal = Field(ge=0)
 
@@ -84,9 +85,9 @@ class PaySettingsIn(BaseModel):
     @field_validator("quota_tiers")
     @classmethod
     def _distinct(cls, v: list[Tier]) -> list[Tier]:
-        if len({t.threshold for t in v}) != len(v):
-            raise ValueError("Each quota tier needs a different target")
-        return sorted(v, key=lambda t: t.threshold)
+        if len({(t.min_days, t.threshold) for t in v}) != len(v):
+            raise ValueError("Two quota tiers have the same days and sales target")
+        return sorted(v, key=lambda t: (t.min_days, t.threshold))
 
 
 class PaySettingsOut(PaySettingsIn):
@@ -115,7 +116,8 @@ def put_pay_settings(ctx: AdminSession, body: PaySettingsIn) -> PaySettingsOut:
     row.daily_allowance = body.daily_allowance
     row.quota_basis = body.quota_basis
     row.quota_tiers = [
-        {"threshold": str(t.threshold), "bonus": str(t.bonus)} for t in body.quota_tiers
+        {"min_days": t.min_days, "threshold": str(t.threshold), "bonus": str(t.bonus)}
+        for t in body.quota_tiers
     ]
     row.week_starts_on = body.week_starts_on
     session.flush()

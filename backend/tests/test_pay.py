@@ -194,3 +194,32 @@ def test_pay_permissions(world):
     assert world.client.post(f"/therapists/{a.ana.id}/clock-in", headers=acct).status_code == 403
     r = world.client.post(f"/therapists/{a.ana.id}/clock-in", headers=north_mgr)
     assert r.status_code == 403
+
+
+def test_bonus_needs_days_worked_and_sales():
+    # Banahaw's example: 6 days worked and ₱25,000 sales earns ₱200.
+    tiers = [
+        {"min_days": 6, "threshold": "25000", "bonus": "200"},
+        {"min_days": 6, "threshold": "35000", "bonus": "400"},
+    ]
+    assert pay.bonus_for(tiers, Decimal(25000), 6) == (Decimal(200), Decimal(25000))
+    assert pay.bonus_for(tiers, Decimal(40000), 7) == (Decimal(400), Decimal(35000))
+    assert pay.bonus_for(tiers, Decimal(30000), 5) == (Decimal(0), None)  # too few days
+    assert pay.bonus_for(tiers, Decimal(24999), 6) == (Decimal(0), None)  # sales short
+    # Tiers saved before days were added need no days.
+    assert pay.bonus_for([{"threshold": "100", "bonus": "5"}], Decimal(100), 0)[0] == 5
+
+
+def test_quota_tier_days_are_saved(world):
+    owner = world.login("owner@banahaw.ph")
+    body = {
+        "daily_allowance": "250",
+        "quota_basis": "sales",
+        "week_starts_on": 0,
+        "quota_tiers": [{"min_days": 6, "threshold": "25000", "bonus": "200"}],
+    }
+    r = world.client.put("/pay-settings", json=body, headers=owner)
+    assert r.status_code == 200, r.text
+    assert r.json()["quota_tiers"][0]["min_days"] == 6
+    body["quota_tiers"].append({"min_days": 6, "threshold": "25000", "bonus": "300"})
+    assert world.client.put("/pay-settings", json=body, headers=owner).status_code == 422
