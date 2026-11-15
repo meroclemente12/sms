@@ -14,7 +14,8 @@ Design doc: https://claude.ai/artifact/6pfMAsBWf1NBC9jntFHKb6 · Phase 1 backlog
 | `backend/app/scheduling.py` | Availability engine: valid therapist + bed pairs, couples bookings, free times, moving bookings |
 | `backend/app/lifecycle.py` | Booking status transitions with history |
 | `backend/app/api/` | HTTP API: `auth.py` (sign-in, staff), `setup.py` (setup screens), `bookings.py` (day board, bookings), `clients.py`, `payments.py` (payment methods, payments, the accountant's check) |
-| `backend/app/cli.py` | `create-tenant` command |
+| `backend/app/cli.py` | `create-tenant`, `seed-demo` and `import-menu` commands |
+| `backend/app/menus.py` | Printed branch menus (The Rise) and the loader behind `import-menu` |
 | `backend/alembic/versions/0001_initial_schema.py` | Schema, double-booking exclusion constraints, row-level security |
 | `frontend/` | React + TypeScript (Vite) front desk app: day board, bookings, walk-ins, clients, setup |
 

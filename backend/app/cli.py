@@ -10,6 +10,11 @@ The password is asked for interactively (or read from ADMIN_PASSWORD).
 Load a sample spa to try the app (does nothing if it already exists):
 
     uv run python -m app.cli seed-demo
+
+Load a branch's printed menu (services, packages, member and non-member prices):
+
+    uv run python -m app.cli import-menu --spa banahaw --branch "The Rise" [--menu the-rise]
+        [--all-therapists-can-do]
 """
 
 from __future__ import annotations
@@ -65,6 +70,15 @@ def main(argv: list[str] | None = None) -> int:
     ct.add_argument("--admin-email", required=True)
     ct.add_argument("--admin-name", default="Admin")
     sub.add_parser("seed-demo", help="Load a sample spa to try the app")
+    im = sub.add_parser("import-menu", help="Load a branch's menu and prices")
+    im.add_argument("--spa", required=True, help="Spa code, e.g. banahaw")
+    im.add_argument("--branch", required=True, help='Branch name, e.g. "The Rise"')
+    im.add_argument("--menu", default="the-rise", help="Which menu (default: the-rise)")
+    im.add_argument(
+        "--all-therapists-can-do",
+        action="store_true",
+        help="Let every therapist at the branch do every service on the menu",
+    )
     args = parser.parse_args(argv)
 
     if args.cmd == "seed-demo":
@@ -78,6 +92,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Demo spa '{DEMO_SLUG}' already exists, nothing to do.")
         return 0
 
+    if args.cmd == "import-menu":
+        return _import_menu(args)
+
     password = os.environ.get("ADMIN_PASSWORD") or getpass.getpass("Admin password: ")
     try:
         tenant = create_tenant(args.name, args.slug, args.admin_email, args.admin_name, password)
@@ -85,6 +102,52 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Error: {e}", file=sys.stderr)
         return 1
     print(f"Created '{tenant.name}'. Staff sign in with spa code '{tenant.slug}'.")
+    return 0
+
+
+def _import_menu(args: argparse.Namespace) -> int:
+    from sqlalchemy import func
+
+    from app.menus import MENUS, import_menu
+    from app.models import Branch
+
+    items = MENUS.get(args.menu)
+    if items is None:
+        print(f"Error: no menu '{args.menu}'. Menus: {', '.join(MENUS)}", file=sys.stderr)
+        return 1
+    with SessionLocal() as session, session.begin():
+        tenant_id = session.scalar(select(Tenant.id).where(Tenant.slug == args.spa.lower()))
+        if tenant_id is None:
+            print(f"Error: no spa with the code '{args.spa}'", file=sys.stderr)
+            return 1
+        set_tenant(session, tenant_id)
+        branch = session.scalar(
+            select(Branch).where(
+                Branch.tenant_id == tenant_id,
+                func.lower(Branch.name) == args.branch.strip().lower(),
+            )
+        )
+        if branch is None:
+            names = session.scalars(select(Branch.name).where(Branch.tenant_id == tenant_id))
+            print(
+                f"Error: no branch '{args.branch}'. Branches: {', '.join(names)}",
+                file=sys.stderr,
+            )
+            return 1
+        try:
+            result = import_menu(
+                session, branch, items, all_therapists_can_do=args.all_therapists_can_do
+            )
+        except ValueError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+    print(f"{branch.name}: {len(result.created)} services added, {len(result.updated)} updated.")
+    if result.skills_added:
+        print(f"Added {result.skills_added} therapist skills.")
+    if result.no_commission:
+        print("Set the therapist commission in Setup for (no default for their length):")
+        for name in result.no_commission:
+            print(f"  - {name}")
     return 0
 
 
