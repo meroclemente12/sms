@@ -5,10 +5,11 @@ import { useAuth, useBusinessDay } from '../auth'
 import { Card, Empty, ErrorNote } from '../components/ui'
 import { useLoad } from '../components/hooks'
 import { addDays, dayLabel, peso } from '../time'
+import { PayoutCard } from '../accounting/Payouts'
 
 /** One week's pay per therapist: commission, daily allowance and quota bonus. */
 export default function TherapistPay() {
-  const { branch, isAdmin } = useAuth()
+  const { branch, isAdmin, canDoAccounts } = useAuth()
   const business = useBusinessDay()
   const [day, setDay] = useState(() => business.today())
   const [open, setOpen] = useState<string | null>(null)
@@ -155,6 +156,9 @@ export default function TherapistPay() {
           )}
           {thisWeek && <p className="muted small">This week is still running: the totals grow as services are checked out.</p>}
         </Card>
+      )}
+      {canDoAccounts && data && data.therapists.length > 0 && (
+        <PayoutCard branchId={branch.id} week={data.week_start} today={today} />
       )}
     </div>
   )

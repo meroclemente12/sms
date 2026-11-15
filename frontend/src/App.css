@@ -1745,3 +1745,46 @@ table.compact th {
 .accounting-page .segmented-buttons {
   flex-wrap: wrap;
 }
+
+.sidenav .nav-sub {
+  padding-left: 28px;
+  font-size: 14px;
+}
+
+.alloc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+
+.alloc-card .fund-amount {
+  margin: 4px 0;
+}
+
+.alloc-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--off);
+  overflow: hidden;
+  margin: 6px 0 10px;
+}
+
+.alloc-bar span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
+.alloc-card .toolbar {
+  flex-wrap: wrap;
+}
+
+@media (max-width: 640px) {
+  .alloc-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.alloc-history td:nth-child(-n + 3) {
+  white-space: nowrap;
+}

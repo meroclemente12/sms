@@ -24,6 +24,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import AdminSession, Staff, StaffSession
+from app.fund_plans import allocated_by_account
 from app.funds import (
     BRANCH_ONLY_KINDS,
     Entry,
@@ -104,11 +105,15 @@ class AccountOut(BaseModel):
     active: bool
     balance: Decimal
     unverified: Decimal
+    # Set aside in allocations, and what is left to spend.
+    allocated: Decimal
+    available: Decimal
 
 
 def _accounts_out(session: Session, accounts: list[FundAccount]) -> list[AccountOut]:
     names = dict(session.execute(select(Branch.id, Branch.name)).all())
     bal = balances(session, accounts)
+    held = allocated_by_account(session, [a.id for a in accounts])
     return [
         AccountOut(
             id=a.id,
@@ -125,6 +130,8 @@ def _accounts_out(session: Session, accounts: list[FundAccount]) -> list[Account
             active=a.active,
             balance=bal[a.id].balance,
             unverified=bal[a.id].unverified,
+            allocated=held[a.id],
+            available=bal[a.id].balance - held[a.id],
         )
         for a in accounts
     ]

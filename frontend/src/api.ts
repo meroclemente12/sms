@@ -581,6 +581,9 @@ export interface FundAccount extends FundAccountIn {
   balance: string
   /** Cashless guest payments not verified yet (already in the balance). */
   unverified: string
+  /** Set aside in allocations, and what is left to spend. */
+  allocated: string
+  available: string
 }
 
 export type FundDirection = 'in' | 'out'
@@ -627,4 +630,85 @@ export interface FundEntryList {
   money_out: string
   opening_balance: string | null
   closing_balance: string | null
+}
+
+export type ScheduleKind = 'expense' | 'income' | 'transfer'
+export type Frequency = 'weekly' | 'monthly'
+
+export interface FundScheduleIn {
+  branch_id: string
+  name: string
+  kind: ScheduleKind
+  account_id: string
+  to_account_id: string | null
+  category_id: string | null
+  amount: string
+  frequency: Frequency
+  /** 0 = Monday ... 6 = Sunday */
+  weekday: number
+  day_of_month: number
+  starts_on: string | null
+  ends_on: string | null
+  description: string | null
+  active: boolean
+}
+
+export interface FundSchedule extends FundScheduleIn {
+  id: string
+  branch_name: string
+  account_name: string
+  to_account_name: string | null
+  category_name: string | null
+  starts_on: string
+  next_due: string | null
+}
+
+export interface FundDue {
+  schedule: FundSchedule
+  due_date: string
+  overdue: boolean
+}
+
+export interface FundAllocation {
+  id: string
+  branch_id: string
+  branch_name: string
+  account_id: string
+  account_name: string
+  name: string
+  target_amount: string | null
+  target_date: string | null
+  notes: string | null
+  closed: boolean
+  put_in: string
+  used: string
+  balance: string
+}
+
+export interface AllocationHistoryLine {
+  kind: 'set_aside' | 'released' | 'spent'
+  business_date: string
+  at: string
+  amount: string
+  note: string | null
+  by: string | null
+  voided: boolean
+  transaction_id: string | null
+}
+
+export interface PayoutLine {
+  therapist_id: string
+  name: string
+  amount_due: string
+  paid: boolean
+  paid_amount: string | null
+  paid_on: string | null
+  paid_from: string | null
+  transaction_id: string | null
+}
+
+export interface PayoutList {
+  week_start: string
+  items: PayoutLine[]
+  to_pay: string
 }

@@ -18,6 +18,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -25,6 +26,7 @@ from sqlalchemy import (
     Time,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
@@ -692,6 +694,21 @@ class FundTransaction(TimestampMixin, Base):
     __table_args__ = (
         CheckConstraint("amount > 0", name="fund_amount_positive"),
         _enum_check("direction", FundDirection),
+        Index(
+            "uq_fund_transactions_occurrence",
+            "schedule_id",
+            "due_date",
+            "account_id",
+            unique=True,
+            postgresql_where=text("schedule_id IS NOT NULL AND voided_at IS NULL"),
+        ),
+        Index(
+            "uq_fund_transactions_payout",
+            "therapist_id",
+            "pay_week_start",
+            unique=True,
+            postgresql_where=text("therapist_id IS NOT NULL AND voided_at IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = _pk()
@@ -713,6 +730,110 @@ class FundTransaction(TimestampMixin, Base):
     voided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     void_reason: Mapped[str | None] = mapped_column(Text)
+    # Posted from a recurring schedule, for the occurrence due on due_date.
+    schedule_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("fund_schedules.id"), index=True
+    )
+    due_date: Mapped[date | None] = mapped_column(Date)
+    # Paid out of money set aside (an allocation), which it then reduces.
+    allocation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("fund_allocations.id"), index=True
+    )
+    # A therapist's weekly pay (see app.pay), paid for the week starting pay_week_start.
+    therapist_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("therapists.id"))
+    pay_week_start: Mapped[date | None] = mapped_column(Date)
+
+
+class ScheduleKind(enum.StrEnum):
+    expense = "expense"
+    income = "income"
+    transfer = "transfer"
+
+
+class Frequency(enum.StrEnum):
+    weekly = "weekly"
+    monthly = "monthly"
+
+
+class FundSchedule(TimestampMixin, Base):
+    """A transaction that comes back every week or month: rent, electricity, the petty
+    cash refill. On each due date it shows as Due; an admin posts it (with the real
+    amount) or skips it. Nothing is posted by itself."""
+
+    __tablename__ = "fund_schedules"
+    __table_args__ = (
+        _enum_check("kind", ScheduleKind),
+        _enum_check("frequency", Frequency),
+        CheckConstraint("amount > 0", name="schedule_amount_positive"),
+        CheckConstraint("weekday BETWEEN 0 AND 6", name="weekday_allowed"),
+        CheckConstraint("day_of_month BETWEEN 1 AND 31", name="day_of_month_allowed"),
+    )
+
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = _tenant_fk()
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("branches.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(10), default=ScheduleKind.expense)
+    # expense: paid from; income: received in; transfer: from
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("fund_accounts.id"))
+    to_account_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("fund_accounts.id"))
+    category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("fund_categories.id"))
+    # The usual amount; it can be changed when posting.
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    frequency: Mapped[str] = mapped_column(String(10), default=Frequency.monthly)
+    # weekly: 0 = Monday ... 6 = Sunday
+    weekday: Mapped[int] = mapped_column(Integer, default=0)
+    # monthly: 29-31 fall on the last day in shorter months
+    day_of_month: Mapped[int] = mapped_column(Integer, default=1)
+    starts_on: Mapped[date] = mapped_column(Date)
+    ends_on: Mapped[date | None] = mapped_column(Date)
+    description: Mapped[str | None] = mapped_column(Text)
+    skipped: Mapped[list[date]] = mapped_column(ARRAY(Date), server_default="{}", default=list)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class FundAllocation(TimestampMixin, Base):
+    """Money set aside inside one account for a future cost (bed maintenance, the
+    Christmas party). The money stays in the account; the account's available balance
+    is its balance minus what is set aside. The amount set aside is the sum of its
+    moves minus what was paid out of it (fund_transactions.allocation_id)."""
+
+    __tablename__ = "fund_allocations"
+    __table_args__ = (UniqueConstraint("account_id", "name"),)
+
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = _tenant_fk()
+    branch_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("branches.id", ondelete="CASCADE"), index=True
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("fund_accounts.id"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    target_amount: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    target_date: Mapped[date | None] = mapped_column(Date)
+    notes: Mapped[str | None] = mapped_column(Text)
+    closed: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
+class FundAllocationMove(Base):
+    """Money put aside into an allocation (positive) or released back (negative)."""
+
+    __tablename__ = "fund_allocation_moves"
+    __table_args__ = (CheckConstraint("amount <> 0", name="move_not_zero"),)
+
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = _tenant_fk()
+    allocation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("fund_allocations.id", ondelete="CASCADE"), index=True
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    business_date: Mapped[date] = mapped_column(Date)
+    note: Mapped[str | None] = mapped_column(Text)
+    recorded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), default=func.clock_timestamp()
+    )
 
 
 # --- Access --------------------------------------------------------------------------
