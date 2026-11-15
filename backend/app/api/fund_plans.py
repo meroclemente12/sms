@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.api.deps import AdminSession, Staff, ensure_branch, require_role
 from app.api.funds import EntryOut, _err, _one_entry
 from app.fund_plans import (
+    allocated_by_account,
     allocation_totals,
     close_allocation,
     due_items,
@@ -31,7 +32,7 @@ from app.fund_plans import (
     spend,
     week_payouts,
 )
-from app.funds import FundError
+from app.funds import FundError, balances, entries
 from app.models import (
     AccountKind,
     Branch,
@@ -653,3 +654,162 @@ def post_payouts(ctx: AdminSession, branch_id: uuid.UUID, body: PayoutIn) -> Pay
     except IntegrityError as e:
         raise HTTPException(409, "Someone else just paid this week") from e
     return _payout_list(session, branch, body.week)
+
+
+# --- Dashboard -------------------------------------------------------------------------
+
+
+class DayMoney(BaseModel):
+    date: date
+    money_in: Decimal
+    money_out: Decimal
+
+
+class CategoryMoney(BaseModel):
+    name: str
+    amount: Decimal
+
+
+class AccountMoney(BaseModel):
+    id: uuid.UUID
+    name: str
+    kind: str
+    branch_name: str
+    balance: Decimal
+    allocated: Decimal
+    available: Decimal
+
+
+class Dashboard(BaseModel):
+    date_from: date
+    date_to: date
+    # Now
+    total_balance: Decimal
+    total_available: Decimal
+    total_allocated: Decimal
+    unverified: Decimal
+    accounts: list[AccountMoney]
+    # In the period (transfers between accounts are not counted)
+    sales: Decimal
+    other_income: Decimal
+    expenses: Decimal
+    net: Decimal
+    days: list[DayMoney]
+    expenses_by_category: list[CategoryMoney]
+    # Recurring
+    overdue_count: int
+    overdue_amount: Decimal
+    due_next_7_count: int
+    due_next_7_amount: Decimal
+    allocations: list[AllocationOut]
+
+
+@router.get("/fund-dashboard", response_model=Dashboard)
+def dashboard(
+    ctx: ViewerSession,
+    branch_id: uuid.UUID | None = None,
+    date_from: Annotated[date | None, Query()] = None,
+    date_to: Annotated[date | None, Query()] = None,
+) -> Dashboard:
+    """Money now and over a period (default: this month so far)."""
+    session, staff = ctx
+    branches = {b.id: b for b in session.scalars(select(Branch).order_by(Branch.name))}
+    if branch_id:
+        ensure_branch(session, staff, branch_id)
+    visible = [b for b in branches.values() if staff.can_access_branch(b.id)]
+    ids = {branch_id} if branch_id else {b.id for b in visible}
+    ref = branches[branch_id] if branch_id else (visible[0] if visible else None)
+    today = branch_today(ref) if ref else date.today()
+    date_to = date_to or today
+    date_from = date_from or date_to.replace(day=1)
+    if date_to < date_from:
+        raise HTTPException(422, "The end date is before the start date")
+    if (date_to - date_from).days > 370:
+        raise HTTPException(422, "Pick at most a year at a time")
+
+    accounts = [
+        a
+        for a in session.scalars(select(FundAccount).order_by(FundAccount.sort_order))
+        if a.branch_id in ids
+    ]
+    bal = balances(session, accounts)
+    held = allocated_by_account(session, [a.id for a in accounts])
+    account_rows = [
+        AccountMoney(
+            id=a.id,
+            name=a.name,
+            kind=a.kind,
+            branch_name=branches[a.branch_id].name,
+            balance=bal[a.id].balance,
+            allocated=held[a.id],
+            available=bal[a.id].balance - held[a.id],
+        )
+        for a in accounts
+        if a.active or bal[a.id].balance != 0
+    ]
+
+    zero = Decimal(0)
+    per_day = {
+        date_from + timedelta(days=i): [zero, zero] for i in range((date_to - date_from).days + 1)
+    }
+    sales = other = spent = zero
+    by_cat: dict[uuid.UUID | None, Decimal] = {}
+    for e in entries(session, accounts, date_from, date_to):
+        if e.voided_at is not None or e.kind == "transfer":
+            continue
+        slot = per_day.setdefault(e.business_date, [zero, zero])
+        if e.direction == FundDirection.money_in:
+            slot[0] += e.amount
+            if e.kind == "payment":
+                sales += e.amount
+            else:
+                other += e.amount
+        else:
+            slot[1] += e.amount
+            spent += e.amount
+            by_cat[e.category_id] = by_cat.get(e.category_id, zero) + e.amount
+    cat_names = _names(session, FundCategory, list(by_cat))
+
+    schedules = [s for s in session.scalars(select(FundSchedule)) if s.branch_id in ids]
+    overdue = due_items(session, schedules, today - timedelta(days=1))
+    upcoming = [
+        d for d in due_items(session, schedules, today + timedelta(days=7)) if d.due_date >= today
+    ]
+    allocs = [
+        a
+        for a in session.scalars(
+            select(FundAllocation)
+            .where(FundAllocation.closed.is_(False))
+            .order_by(FundAllocation.target_date.nulls_last(), FundAllocation.name)
+        )
+        if a.branch_id in ids
+    ]
+    return Dashboard(
+        date_from=date_from,
+        date_to=date_to,
+        total_balance=sum((r.balance for r in account_rows), zero),
+        total_available=sum((r.available for r in account_rows), zero),
+        total_allocated=sum((r.allocated for r in account_rows), zero),
+        unverified=sum((bal[a.id].unverified for a in accounts), zero),
+        accounts=account_rows,
+        sales=sales,
+        other_income=other,
+        expenses=spent,
+        net=sales + other - spent,
+        days=[DayMoney(date=d, money_in=v[0], money_out=v[1]) for d, v in sorted(per_day.items())],
+        expenses_by_category=sorted(
+            (
+                CategoryMoney(
+                    name=cat_names.get(k, "Uncategorised") if k else "Uncategorised", amount=v
+                )
+                for k, v in by_cat.items()
+            ),
+            key=lambda c: c.amount,
+            reverse=True,
+        ),
+        overdue_count=len(overdue),
+        overdue_amount=sum((d.schedule.amount for d in overdue), zero),
+        due_next_7_count=len(upcoming),
+        due_next_7_amount=sum((d.schedule.amount for d in upcoming), zero),
+        allocations=_allocations_out(session, allocs),
+    )

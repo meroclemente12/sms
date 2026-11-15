@@ -281,3 +281,71 @@ def test_salary_payout_from_weekly_pay(world, today_is_day):
     )
     r = world.client.get(url, params={"week": DAY.isoformat()}, headers=owner)
     assert not {i["name"]: i for i in r.json()["items"]}["Ana"]["paid"]
+
+
+def test_dashboard_totals(world, today_is_day):
+    owner = world.login("owner@banahaw.ph")
+    desk = world.login("desk@banahaw.ph")
+    acct = world.login("acct@banahaw.ph")
+    accts = _accounts(world, owner)
+    bpi, petty = accts["Main/BPI bank transfer"], accts["Main/Petty cash"]
+    cats = _categories(world, owner)
+    body = {k: bpi[k] for k in ("name", "kind", "branch_id", "accepts_payments")}
+    world.client.put(
+        f"/accounts/{bpi['id']}", json={**body, "opening_balance": "10000"}, headers=owner
+    )
+    world.client.post(
+        "/fund-transfers",
+        json={"from_account_id": bpi["id"], "to_account_id": petty["id"], "amount": "1000"},
+        headers=owner,
+    )
+    for cat, amount in (("Laundry", "300"), ("Laundry", "200"), ("Supplies", "150")):
+        r = world.client.post(
+            "/fund-transactions",
+            json={
+                "account_id": petty["id"],
+                "amount": amount,
+                "category_id": cats[cat]["id"],
+                "description": "x",
+            },
+            headers=desk,
+        )
+        assert r.status_code == 201, r.text
+    world.client.post(
+        "/fund-allocations",
+        json={"account_id": bpi["id"], "name": "Party", "initial_amount": "2000"},
+        headers=owner,
+    )
+    world.client.post(
+        "/fund-schedules",
+        json={
+            "branch_id": str(world.a.branch.id),
+            "name": "Rent",
+            "account_id": bpi["id"],
+            "category_id": cats["Rent"]["id"],
+            "amount": "5000",
+            "day_of_month": 1,
+            "starts_on": "2026-11-01",
+        },
+        headers=owner,
+    )
+    assert world.client.get("/fund-dashboard", headers=desk).status_code == 403
+    r = world.client.get("/fund-dashboard", headers=acct)
+    assert r.status_code == 200, r.text
+    d = r.json()
+    assert (d["date_from"], d["date_to"]) == ("2026-11-01", "2026-11-02")
+    # The transfer is not income or expense.
+    assert (d["sales"], d["other_income"], d["expenses"], d["net"]) == (
+        "0",
+        "0",
+        "650.00",
+        "-650.00",
+    )
+    assert d["total_balance"] == "9350.00" and d["total_allocated"] == "2000.00"
+    assert [(c["name"], c["amount"]) for c in d["expenses_by_category"]] == [
+        ("Laundry", "500.00"),
+        ("Supplies", "150.00"),
+    ]
+    assert [x["money_out"] for x in d["days"]] == ["0", "650.00"]
+    assert (d["overdue_count"], d["overdue_amount"]) == (1, "5000.00")
+    assert [a["name"] for a in d["allocations"]] == ["Party"]
