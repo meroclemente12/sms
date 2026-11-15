@@ -58,6 +58,17 @@ python -m app.cli create-tenant --name "Banahaw Heals Spa" --slug banahaw \
 
 It asks for a password. The **spa code** staff type at sign-in is the `--slug`, here `banahaw`.
 
+**Load a branch's menu.** After adding the branch and its rooms in Setup, this loads the
+services, packages and member/non-member prices from the printed menu (only The Rise
+so far, in `backend/app/menus.py`):
+
+```bash
+python -m app.cli import-menu --spa banahaw --branch "The Rise" --all-therapists-can-do
+```
+
+Leave out `--all-therapists-can-do` to tick each therapist's services in Setup instead.
+Running it again updates prices rather than adding duplicates.
+
 ## 4. Cloudflare Pages: the web app
 
 1. Sign up at dash.cloudflare.com, then **Workers & Pages > Create > Pages >
