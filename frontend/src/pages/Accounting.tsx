@@ -6,6 +6,7 @@ import { Card, Empty, ErrorNote } from '../components/ui'
 import { useLoad } from '../components/hooks'
 import { EntriesTable } from '../accounting/Entries'
 import { RecordForm, TransferForm } from '../accounting/Forms'
+import { DueCard } from '../accounting/Due'
 import { addDays, pesoExact } from '../time'
 
 type Show = 'all' | 'sales' | 'in' | 'out' | 'transfers'
@@ -90,6 +91,8 @@ export default function Accounting() {
         </Card>
       )}
 
+      <DueCard today={today} onPosted={changed} />
+
       <Card title={`Balances · ${pesoExact(total)}`}>
         <ErrorNote message={accounts.error} />
         <div className="fund-grid">
@@ -105,6 +108,11 @@ export default function Accounting() {
               </span>
               <strong>{a.name}</strong>
               <span className={`fund-amount ${Number(a.balance) < 0 ? 'neg' : ''}`}>{pesoExact(a.balance)}</span>
+              {Number(a.allocated) > 0 && (
+                <span className="muted small">
+                  {pesoExact(a.available)} free · {pesoExact(a.allocated)} set aside
+                </span>
+              )}
               {Number(a.unverified) > 0 && (
                 <span className="muted small">{pesoExact(a.unverified)} not verified yet</span>
               )}

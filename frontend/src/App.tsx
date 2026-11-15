@@ -11,6 +11,8 @@ import DiscountCodesPage from './pages/setup/DiscountCodesPage'
 import AccountsPage from './pages/setup/AccountsPage'
 import Accounting from './pages/Accounting'
 import PettyCash from './pages/PettyCash'
+import Recurring from './pages/Recurring'
+import Allocations from './pages/Allocations'
 import Payments from './pages/Payments'
 import SchedulePage from './pages/setup/SchedulePage'
 import ServicesPage from './pages/setup/ServicesPage'
@@ -39,6 +41,8 @@ function Routed() {
         {canCheckPayments && <Route path="payments" element={<Payments />} />}
         {canCheckPayments && <Route path="pay" element={<TherapistPay />} />}
         {canDoAccounts && <Route path="accounting" element={<Accounting />} />}
+        {canDoAccounts && <Route path="accounting/recurring" element={<Recurring />} />}
+        {canDoAccounts && <Route path="accounting/allocations" element={<Allocations />} />}
         {canManage && (
           <>
             <Route path="setup/branches" element={<BranchesPage />} />

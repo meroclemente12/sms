@@ -96,7 +96,19 @@ export default function Layout() {
           )}
           {canCheckPayments && <NavLink to="/payments">Payments</NavLink>}
           {canCheckPayments && <NavLink to="/pay">Therapist pay</NavLink>}
-          {canDoAccounts && <NavLink to="/accounting">Accounting</NavLink>}
+          {canDoAccounts && (
+            <>
+              <NavLink to="/accounting" end>
+                Accounting
+              </NavLink>
+              <NavLink to="/accounting/recurring" className="nav-sub">
+                Recurring
+              </NavLink>
+              <NavLink to="/accounting/allocations" className="nav-sub">
+                Allocations
+              </NavLink>
+            </>
+          )}
           {canManage && (
             <>
               <p className="nav-group">Setup</p>

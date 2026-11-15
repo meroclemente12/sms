@@ -257,6 +257,7 @@ def record(
     description: str | None,
     reference: str | None,
     user_id: uuid.UUID | None,
+    links: dict | None = None,
 ) -> FundTransaction:
     if amount <= 0:
         raise FundError("The amount must be more than zero")
@@ -279,6 +280,7 @@ def record(
         description=description,
         reference=reference,
         recorded_by=user_id,
+        **(links or {}),
     )
     session.add(t)
     session.flush()
@@ -295,6 +297,7 @@ def transfer(
     description: str | None,
     reference: str | None,
     user_id: uuid.UUID | None,
+    links: dict | None = None,
 ) -> tuple[FundTransaction, FundTransaction]:
     if source.id == target.id:
         raise FundError("Pick two different accounts")
@@ -317,6 +320,7 @@ def transfer(
             reference=reference,
             transfer_id=group,
             recorded_by=user_id,
+            **(links or {}),
         )
         session.add(t)
         rows.append(t)
