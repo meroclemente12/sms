@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import AdminSession, ManagerSession, Staff, StaffSession, ensure_branch
 from app.business_day import fits_closed_hours, is_open_all_day, suggest_day_start
+from app.funds import add_default_accounts, ensure_categories
 from app.models import (
     Bed,
     BedType,
@@ -39,8 +40,7 @@ from app.models import (
     TherapistSkill,
     TimeBlock,
 )
-from app.pay import clocked_in_today, default_commission
-from app.payments import add_default_methods
+from app.pay import branch_today, clocked_in_today, default_commission
 
 router = APIRouter(tags=["setup"])
 
@@ -138,7 +138,8 @@ def create_branch(ctx: AdminSession, body: BranchIn) -> Branch:
     _apply_branch(branch, body)
     session.add(branch)
     _flush(session)
-    add_default_methods(session, branch)
+    add_default_accounts(session, branch, branch_today(branch))
+    ensure_categories(session, staff.tenant_id)
     _flush(session)
     return branch
 

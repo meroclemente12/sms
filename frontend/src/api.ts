@@ -549,3 +549,82 @@ export interface WeekPay {
   therapists: TherapistPay[]
   total: string
 }
+
+// --- Accounting -------------------------------------------------------------------------
+
+export type AccountKind = 'cash' | 'bank' | 'ewallet' | 'petty_cash'
+
+export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = {
+  cash: 'Cash drawer',
+  bank: 'Bank',
+  ewallet: 'E-wallet',
+  petty_cash: 'Petty cash',
+}
+
+export interface FundAccountIn {
+  name: string
+  kind: AccountKind
+  branch_id: string
+  account_number: string | null
+  opening_balance: string
+  opening_date: string | null
+  accepts_payments: boolean
+  needs_reference: boolean
+  sort_order: number
+  active: boolean
+}
+
+export interface FundAccount extends FundAccountIn {
+  id: string
+  branch_name: string
+  opening_date: string
+  balance: string
+  /** Cashless guest payments not verified yet (already in the balance). */
+  unverified: string
+}
+
+export type FundDirection = 'in' | 'out'
+
+export interface FundCategory {
+  id: string
+  name: string
+  direction: FundDirection
+  desk_can_use: boolean
+  sort_order: number
+  active: boolean
+}
+
+export interface FundEntry {
+  kind: 'transaction' | 'transfer' | 'payment'
+  id: string
+  account_id: string
+  account_name: string
+  branch_id: string | null
+  branch_name: string | null
+  business_date: string
+  at: string
+  direction: FundDirection
+  amount: string
+  category_id: string | null
+  category_name: string | null
+  description: string | null
+  reference: string | null
+  recorded_by_name: string | null
+  other_account_name: string | null
+  booking_id: string | null
+  client_name: string | null
+  payment_status: PaymentStatus | null
+  voided: boolean
+  void_reason: string | null
+  can_void: boolean
+}
+
+export interface FundEntryList {
+  date_from: string
+  date_to: string
+  items: FundEntry[]
+  money_in: string
+  money_out: string
+  opening_balance: string | null
+  closing_balance: string | null
+}

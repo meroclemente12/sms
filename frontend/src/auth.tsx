@@ -18,6 +18,7 @@ interface AuthState {
   isAccountant: boolean
   /** May see the payments list and verify or flag cashless payments. */
   canCheckPayments: boolean
+  canDoAccounts: boolean
 }
 
 const AuthContext = createContext<AuthState | null>(null)
@@ -90,6 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAdmin: me?.role === 'admin',
       isAccountant: me?.role === 'accountant',
       canCheckPayments: me?.role === 'admin' || me?.role === 'manager' || me?.role === 'accountant',
+      canDoAccounts: me?.role === 'admin' || me?.role === 'accountant',
     }
   }, [me, loading, branchId, setBranchId, login, logout, refresh])
 

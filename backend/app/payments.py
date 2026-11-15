@@ -14,37 +14,15 @@ from app.models import (
     Booking,
     BookingEvent,
     BookingStatus,
-    Branch,
     Payment,
     PaymentKind,
     PaymentMethod,
     PaymentStatus,
 )
 
-# name, kind, needs a reference number
-DEFAULT_METHODS: tuple[tuple[str, PaymentKind, bool], ...] = (
-    ("Cash", PaymentKind.cash, False),
-    ("GCash", PaymentKind.cashless, True),
-    ("BPI bank transfer", PaymentKind.cashless, True),
-)
-
 
 class PaymentError(ValueError):
     pass
-
-
-def add_default_methods(session: Session, branch: Branch) -> None:
-    for order, (name, kind, needs_ref) in enumerate(DEFAULT_METHODS):
-        session.add(
-            PaymentMethod(
-                tenant_id=branch.tenant_id,
-                branch_id=branch.id,
-                name=name,
-                kind=kind,
-                needs_reference=needs_ref,
-                sort_order=order,
-            )
-        )
 
 
 @dataclass
