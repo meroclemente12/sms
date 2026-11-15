@@ -634,23 +634,19 @@ class PaySettings(TimestampMixin, Base):
 class FundAccount(TimestampMixin, Base):
     """Where money is kept: a branch's cash drawer or petty cash, a bank account, GCash.
 
-    ``branch_id`` is empty for an account shared by every branch (one BPI account that
-    all branches deposit into). Petty cash and the cash drawer always belong to a branch.
-    The balance is the opening balance plus the ledger (fund_transactions) plus guest
-    payments made with a payment method linked to the account."""
+    Every account belongs to one branch (the same bank account used by two branches is
+    set up once per branch). The balance is the opening balance plus the ledger
+    (fund_transactions) plus guest payments made with a payment method linked to it."""
 
     __tablename__ = "fund_accounts"
     __table_args__ = (
-        UniqueConstraint("tenant_id", "branch_id", "name", postgresql_nulls_not_distinct=True),
+        UniqueConstraint("branch_id", "name"),
         _enum_check("kind", AccountKind),
-        CheckConstraint(
-            "branch_id IS NOT NULL OR kind IN ('bank', 'ewallet')", name="local_kinds_need_branch"
-        ),
     )
 
     id: Mapped[uuid.UUID] = _pk()
     tenant_id: Mapped[uuid.UUID] = _tenant_fk()
-    branch_id: Mapped[uuid.UUID | None] = mapped_column(
+    branch_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("branches.id", ondelete="CASCADE"), index=True
     )
     name: Mapped[str] = mapped_column(String(100))

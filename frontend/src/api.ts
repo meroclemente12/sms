@@ -564,8 +564,7 @@ export const ACCOUNT_KIND_LABEL: Record<AccountKind, string> = {
 export interface FundAccountIn {
   name: string
   kind: AccountKind
-  /** null = shared by every branch (bank and e-wallet only) */
-  branch_id: string | null
+  branch_id: string
   account_number: string | null
   opening_balance: string
   opening_date: string | null
@@ -577,7 +576,7 @@ export interface FundAccountIn {
 
 export interface FundAccount extends FundAccountIn {
   id: string
-  branch_name: string | null
+  branch_name: string
   opening_date: string
   balance: string
   /** Cashless guest payments not verified yet (already in the balance). */

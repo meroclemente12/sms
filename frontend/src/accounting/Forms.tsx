@@ -6,7 +6,7 @@ import { ErrorNote, Field } from '../components/ui'
 import { useAction } from '../components/hooks'
 
 function accountLabel(a: FundAccount): string {
-  return a.branch_name ? `${a.name} · ${a.branch_name}` : `${a.name} · all branches`
+  return `${a.name} · ${a.branch_name}`
 }
 
 /** Log money in or out of one account (an expense, a bill, other income). */

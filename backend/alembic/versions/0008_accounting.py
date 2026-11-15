@@ -60,7 +60,9 @@ def upgrade() -> None:
         "fund_accounts",
         sa.Column("id", sa.UUID(), primary_key=True),
         _tenant(),
-        sa.Column("branch_id", sa.UUID(), sa.ForeignKey("branches.id", ondelete="CASCADE")),
+        sa.Column(
+            "branch_id", sa.UUID(), sa.ForeignKey("branches.id", ondelete="CASCADE"), nullable=False
+        ),
         sa.Column("name", sa.String(100), nullable=False),
         sa.Column("kind", sa.String(20), nullable=False),
         sa.Column("account_number", sa.String(100)),
@@ -72,10 +74,7 @@ def upgrade() -> None:
         sa.Column("active", sa.Boolean(), nullable=False),
         *_common(),
         sa.CheckConstraint("kind IN ('cash', 'bank', 'ewallet', 'petty_cash')", name="kind_allowed"),
-        sa.CheckConstraint(
-            "branch_id IS NOT NULL OR kind IN ('bank', 'ewallet')", name="local_kinds_need_branch"
-        ),
-        sa.UniqueConstraint("tenant_id", "branch_id", "name", postgresql_nulls_not_distinct=True),
+        sa.UniqueConstraint("branch_id", "name"),
     )
     op.create_index("ix_fund_accounts_tenant_id", "fund_accounts", ["tenant_id"])
     op.create_index("ix_fund_accounts_branch_id", "fund_accounts", ["branch_id"])

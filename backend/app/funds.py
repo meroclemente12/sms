@@ -94,17 +94,11 @@ def ensure_categories(session: Session, tenant_id: uuid.UUID) -> None:
     session.flush()
 
 
-def _branches_for(session: Session, account: FundAccount) -> list[uuid.UUID]:
-    if account.branch_id:
-        return [account.branch_id]
-    return list(session.scalars(select(Branch.id).where(Branch.tenant_id == account.tenant_id)))
-
-
 def sync_methods(session: Session, account: FundAccount) -> None:
-    """Keep the account's payment methods in step with it: one per branch where guests
-    can pay into it, named like the account. Methods are switched off, never deleted,
-    because old payments point at them."""
-    in_scope = set(_branches_for(session, account))
+    """Keep the account's payment method in step with it: guests can pay into it at its
+    branch, under the account's name. A method is switched off, never deleted, because
+    old payments point at it."""
+    in_scope = {account.branch_id}
     wanted = account.accepts_payments and account.active
     linked = {
         m.branch_id: m
@@ -150,8 +144,7 @@ def sync_methods(session: Session, account: FundAccount) -> None:
 
 
 def add_default_accounts(session: Session, branch: Branch, opening_date: date) -> None:
-    """A new branch starts with a cash drawer, GCash, BPI and petty cash, and guests can
-    also pay into the spa's shared accounts there."""
+    """A new branch starts with a cash drawer, GCash, BPI and petty cash."""
     for order, (name, kind, pays, needs_ref) in enumerate(DEFAULT_BRANCH_ACCOUNTS):
         account = FundAccount(
             tenant_id=branch.tenant_id,
@@ -167,12 +160,6 @@ def add_default_accounts(session: Session, branch: Branch, opening_date: date) -
         session.add(account)
         session.flush()
         sync_methods(session, account)
-    for shared in session.scalars(
-        select(FundAccount).where(
-            FundAccount.tenant_id == branch.tenant_id, FundAccount.branch_id.is_(None)
-        )
-    ):
-        sync_methods(session, shared)
 
 
 # --- Balances --------------------------------------------------------------------------
@@ -190,10 +177,7 @@ def _payment_starts(session: Session, accounts: list[FundAccount]) -> dict[uuid.
     branches = {b.id: b for b in session.scalars(select(Branch))}
     out: dict[uuid.UUID, dict] = {}
     for a in accounts:
-        ids = [a.branch_id] if a.branch_id else list(branches)
-        out[a.id] = {
-            bid: day_bounds(branches[bid], a.opening_date)[0] for bid in ids if bid in branches
-        }
+        out[a.id] = {a.branch_id: day_bounds(branches[a.branch_id], a.opening_date)[0]}
     return out
 
 

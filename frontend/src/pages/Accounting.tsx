@@ -21,7 +21,7 @@ const SHOWS: { value: Show; label: string }[] = [
 type Panel = null | 'out' | 'in' | 'transfer'
 
 export default function Accounting() {
-  const { branch, me } = useAuth()
+  const { branch, me, isAdmin } = useAuth()
   const business = useBusinessDay()
   const today = business.today()
   const tz = branch?.timezone ?? 'Asia/Manila'
@@ -54,20 +54,22 @@ export default function Accounting() {
     <div className="stack accounting-page">
       <div className="board-toolbar">
         <h1>Accounting</h1>
-        <div className="toolbar">
-          <button className={panel === 'out' ? 'primary' : ''} onClick={() => setPanel(panel === 'out' ? null : 'out')}>
-            Record expense or bill
-          </button>
-          <button className={panel === 'in' ? 'primary' : ''} onClick={() => setPanel(panel === 'in' ? null : 'in')}>
-            Record other income
-          </button>
-          <button
-            className={panel === 'transfer' ? 'primary' : ''}
-            onClick={() => setPanel(panel === 'transfer' ? null : 'transfer')}
-          >
-            Move money / refill petty cash
-          </button>
-        </div>
+        {isAdmin && (
+          <div className="toolbar">
+            <button className={panel === 'out' ? 'primary' : ''} onClick={() => setPanel(panel === 'out' ? null : 'out')}>
+              Record expense or bill
+            </button>
+            <button className={panel === 'in' ? 'primary' : ''} onClick={() => setPanel(panel === 'in' ? null : 'in')}>
+              Record other income
+            </button>
+            <button
+              className={panel === 'transfer' ? 'primary' : ''}
+              onClick={() => setPanel(panel === 'transfer' ? null : 'transfer')}
+            >
+              Move money / refill petty cash
+            </button>
+          </div>
+        )}
       </div>
 
       {panel && accounts.data && categories.data && (
@@ -99,7 +101,7 @@ export default function Accounting() {
               onClick={() => setAccountId(accountId === a.id ? '' : a.id)}
             >
               <span className="muted small">
-                {ACCOUNT_KIND_LABEL[a.kind]} · {a.branch_name ?? 'All branches'}
+                {ACCOUNT_KIND_LABEL[a.kind]} · {a.branch_name}
               </span>
               <strong>{a.name}</strong>
               <span className={`fund-amount ${Number(a.balance) < 0 ? 'neg' : ''}`}>{pesoExact(a.balance)}</span>

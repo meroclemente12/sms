@@ -9,7 +9,7 @@ import { dayLabel, pesoExact } from '../../time'
 
 const BRANCH_ONLY: AccountKind[] = ['cash', 'petty_cash']
 
-function blank(branchId: string | null): FundAccountIn {
+function blank(branchId: string): FundAccountIn {
   return {
     name: '',
     kind: 'bank',
@@ -38,6 +38,7 @@ function AccountForm({
   const { me } = useAuth()
   const [d, setD] = useState<FundAccountIn>(initial)
   const branchOnly = BRANCH_ONLY.includes(d.kind)
+  const editing = !!onCancel
   function submit(e: FormEvent) {
     e.preventDefault()
     onSave({ ...d, name: d.name.trim() })
@@ -55,7 +56,6 @@ function AccountForm({
             setD({
               ...d,
               kind,
-              branch_id: BRANCH_ONLY.includes(kind) && !d.branch_id ? (me?.branches[0]?.id ?? null) : d.branch_id,
               accepts_payments: kind === 'petty_cash' ? false : d.accepts_payments,
             })
           }}
@@ -68,8 +68,7 @@ function AccountForm({
         </select>
       </Field>
       <Field label="Branch">
-        <select value={d.branch_id ?? ''} onChange={(e) => setD({ ...d, branch_id: e.target.value || null })}>
-          {!branchOnly && <option value="">All branches (shared)</option>}
+        <select value={d.branch_id} disabled={editing} onChange={(e) => setD({ ...d, branch_id: e.target.value })} required>
           {me?.branches.map((b) => (
             <option key={b.id} value={b.id}>
               {b.name}
@@ -166,7 +165,7 @@ function AccountRow({ a, onDone }: { a: FundAccount; onDone: () => void }) {
       <td>
         <strong>{a.name}</strong>
         <div className="muted small">
-          {ACCOUNT_KIND_LABEL[a.kind]} · {a.branch_name ?? 'All branches'}
+          {ACCOUNT_KIND_LABEL[a.kind]} · {a.branch_name}
           {a.account_number && <> · {a.account_number}</>}
         </div>
       </td>
@@ -260,6 +259,7 @@ function NewCategory({ count, onDone }: { count: number; onDone: () => void }) {
 }
 
 export default function AccountsPage() {
+  const { branch } = useAuth()
   const accounts = useLoad(() => api<FundAccount[]>('/accounts'), [])
   const categories = useLoad(() => api<FundCategory[]>('/fund-categories'), [])
   const add = useAction()
@@ -279,7 +279,8 @@ export default function AccountsPage() {
       <Card title="Where money is kept">
         <p className="muted">
           Every cash drawer, bank account, e-wallet and petty cash box. Tick &ldquo;Guests can pay with this&rdquo; to offer it
-          at check-out: guest payments then go straight into that account. A shared bank account can be used by every branch.
+          at check-out: guest payments then go straight into that account. Each branch has its own accounts; a bank account used
+          by two branches is added once for each.
         </p>
         <ErrorNote message={accounts.error} />
         {accounts.data && accounts.data.length === 0 && <Empty>No accounts yet.</Empty>}
@@ -293,7 +294,7 @@ export default function AccountsPage() {
           </table>
         </div>
         <h3>Add an account</h3>
-        <AccountForm key={formKey} initial={blank(null)} busy={add.busy} onSave={(d) => void create(d)} />
+        <AccountForm key={formKey} initial={blank(branch?.id ?? '')} busy={add.busy} onSave={(d) => void create(d)} />
         <ErrorNote message={add.error} />
       </Card>
 

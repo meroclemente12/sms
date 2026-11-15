@@ -2,8 +2,9 @@
 
 Who can do what:
   * admins set up accounts and categories;
-  * admins and accountants see every account and entry, record any money in or out,
-    move money between accounts, and void mistakes;
+  * admins see every account and entry, record any money in or out, move money
+    between accounts, and void mistakes;
+  * accountants see every account and entry, but record nothing;
   * the front desk and managers see only the petty cash of their branches and log
     expenses out of it (in categories marked for the desk), dated today. They can
     void their own entry on the same day.
@@ -16,13 +17,13 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.api.deps import AdminSession, Staff, StaffSession, require_role
+from app.api.deps import AdminSession, Staff, StaffSession
 from app.funds import (
     BRANCH_ONLY_KINDS,
     Entry,
@@ -48,8 +49,6 @@ from app.models import (
 from app.pay import branch_today
 
 router = APIRouter(tags=["accounting"])
-
-FundsSession = Annotated[tuple[Session, Staff], Depends(require_role(UserRole.accountant))]
 
 
 def _sees_all(staff: Staff) -> bool:
@@ -79,8 +78,8 @@ def _err(e: FundError) -> HTTPException:
 class AccountIn(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     kind: AccountKind = AccountKind.bank
-    # Empty = shared by every branch (bank and e-wallet accounts only).
-    branch_id: uuid.UUID | None = None
+    # Every account belongs to one branch.
+    branch_id: uuid.UUID
     account_number: str | None = Field(default=None, max_length=100)
     opening_balance: Decimal = Field(default=Decimal(0), max_digits=12, decimal_places=2)
     opening_date: date | None = None
@@ -94,8 +93,8 @@ class AccountOut(BaseModel):
     id: uuid.UUID
     name: str
     kind: str
-    branch_id: uuid.UUID | None
-    branch_name: str | None
+    branch_id: uuid.UUID
+    branch_name: str
     account_number: str | None
     opening_balance: Decimal
     opening_date: date
@@ -116,7 +115,7 @@ def _accounts_out(session: Session, accounts: list[FundAccount]) -> list[Account
             name=a.name,
             kind=a.kind,
             branch_id=a.branch_id,
-            branch_name=names.get(a.branch_id) if a.branch_id else None,
+            branch_name=names.get(a.branch_id, ""),
             account_number=a.account_number,
             opening_balance=a.opening_balance,
             opening_date=a.opening_date,
@@ -134,14 +133,13 @@ def _accounts_out(session: Session, accounts: list[FundAccount]) -> list[Account
 def _ordered(session: Session, staff: Staff, branch_id: uuid.UUID | None) -> list[FundAccount]:
     q = select(FundAccount)
     if branch_id:
-        q = q.where((FundAccount.branch_id == branch_id) | FundAccount.branch_id.is_(None))
+        q = q.where(FundAccount.branch_id == branch_id)
     rows = [a for a in session.scalars(q) if _visible(staff, a)]
     names = dict(session.execute(select(Branch.id, Branch.name)).all())
-    # Shared accounts first, then by branch, then the order set in Setup.
+    # By branch, then the order set in Setup.
     return sorted(
         rows,
         key=lambda a: (
-            a.branch_id is not None,
             names.get(a.branch_id, ""),
             a.sort_order,
             a.name.lower(),
@@ -151,17 +149,19 @@ def _ordered(session: Session, staff: Staff, branch_id: uuid.UUID | None) -> lis
 
 @router.get("/accounts", response_model=list[AccountOut])
 def list_accounts(ctx: StaffSession, branch_id: uuid.UUID | None = None) -> list[AccountOut]:
-    """Accounts with their balance now. ``branch_id`` keeps that branch's accounts and
-    the shared ones."""
+    """Accounts with their balance now, optionally only one branch's."""
     session, staff = ctx
     return _accounts_out(session, _ordered(session, staff, branch_id))
 
 
 def _save_account(session: Session, a: FundAccount, body: AccountIn) -> AccountOut:
-    if body.branch_id is None and body.kind in BRANCH_ONLY_KINDS:
-        raise HTTPException(422, "Cash and petty cash belong to one branch. Pick the branch.")
-    if body.branch_id and session.get(Branch, body.branch_id) is None:
+    branch = session.get(Branch, body.branch_id)
+    if branch is None:
         raise HTTPException(404, "Branch not found")
+    if a.branch_id and a.branch_id != body.branch_id:
+        raise HTTPException(
+            422, "An account cannot move to another branch. Add a new account there instead."
+        )
     if body.kind == AccountKind.petty_cash and body.accepts_payments:
         raise HTTPException(422, "Guests cannot pay into petty cash")
     a.name = body.name.strip()
@@ -172,8 +172,7 @@ def _save_account(session: Session, a: FundAccount, body: AccountIn) -> AccountO
     if body.opening_date:
         a.opening_date = body.opening_date
     elif a.opening_date is None:
-        branch = session.get(Branch, body.branch_id) if body.branch_id else None
-        a.opening_date = branch_today(branch) if branch else _today_any(session)
+        a.opening_date = branch_today(branch)
     a.accepts_payments = body.accepts_payments
     a.needs_reference = body.needs_reference and body.kind not in BRANCH_ONLY_KINDS
     a.sort_order = body.sort_order
@@ -323,9 +322,9 @@ class EntryList(BaseModel):
 
 
 def _may_void(staff: Staff, e: Entry, today: dict[uuid.UUID | None, date]) -> bool:
-    if e.kind == "payment" or e.voided_at is not None:
+    if e.kind == "payment" or e.voided_at is not None or staff.role == UserRole.accountant:
         return False
-    if _sees_all(staff):
+    if staff.role == UserRole.admin:
         return True
     return e.recorded_by == staff.user.id and e.business_date == today.get(e.branch_id)
 
@@ -474,6 +473,8 @@ def _one_entry(session: Session, staff: Staff, t: FundTransaction) -> EntryOut:
 @router.post("/fund-transactions", response_model=EntryOut, status_code=201)
 def create_transaction(ctx: StaffSession, body: TransactionIn) -> EntryOut:
     session, staff = ctx
+    if staff.role == UserRole.accountant:
+        raise HTTPException(403, "Accountants can view the accounts but not record in them")
     account = _account(session, staff, body.account_id)
     branch_id = body.branch_id or account.branch_id
     if branch_id and not staff.can_access_branch(branch_id):
@@ -524,7 +525,7 @@ class TransferIn(BaseModel):
 
 
 @router.post("/fund-transfers", response_model=list[EntryOut], status_code=201)
-def create_transfer(ctx: FundsSession, body: TransferIn) -> list[EntryOut]:
+def create_transfer(ctx: AdminSession, body: TransferIn) -> list[EntryOut]:
     """Move money between two accounts, e.g. refill petty cash from BPI, or deposit
     the cash drawer to the bank."""
     session, staff = ctx
@@ -561,7 +562,9 @@ def void_transaction(ctx: StaffSession, transaction_id: uuid.UUID, body: VoidIn)
     if t is None:
         raise HTTPException(404, "Entry not found")
     account = _account(session, staff, t.account_id)
-    if not _sees_all(staff):
+    if staff.role == UserRole.accountant:
+        raise HTTPException(403, "Accountants can view the accounts but not change them")
+    if staff.role != UserRole.admin:
         branch = session.get(Branch, account.branch_id)
         if t.recorded_by != staff.user.id or t.business_date != branch_today(branch):
             raise HTTPException(403, "Only today's entries you logged yourself can be voided")

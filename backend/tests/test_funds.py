@@ -33,7 +33,7 @@ def test_branch_starts_with_accounts_linked_to_payment_methods(world):
     assert not set(a["id"] for a in other.values()) & set(a["id"] for a in accts.values())
 
 
-def test_shared_account_becomes_a_payment_method_at_every_branch(world):
+def test_account_becomes_a_payment_method_at_its_branch(world):
     owner = world.login("owner@banahaw.ph")
     body = {
         "name": "BDO Savings",
@@ -41,14 +41,22 @@ def test_shared_account_becomes_a_payment_method_at_every_branch(world):
         "account_number": "0012-3456",
         "opening_balance": "50000",
         "accepts_payments": True,
+        "branch_id": str(world.a.branch.id),
     }
     r = world.client.post("/accounts", json=body, headers=owner)
     assert r.status_code == 201, r.text
     bdo = r.json()
-    assert bdo["branch_id"] is None and bdo["balance"] == "50000.00"
-    for bid in (world.a.branch.id, world.north.id):
-        m = _methods(world, owner, bid)["BDO Savings"]
-        assert m["active"] and m["kind"] == "cashless" and m["needs_reference"]
+    assert bdo["branch_name"] == "Main" and bdo["balance"] == "50000.00"
+    m = _methods(world, owner)["BDO Savings"]
+    assert m["active"] and m["kind"] == "cashless" and m["needs_reference"]
+    assert "BDO Savings" not in _methods(world, owner, world.north.id)
+
+    # The same bank used by North is set up again there, under the same name.
+    north_bdo = {**body, "branch_id": str(world.north.id)}
+    assert world.client.post("/accounts", json=north_bdo, headers=owner).status_code == 201
+    # An account cannot move branch.
+    r = world.client.put(f"/accounts/{bdo['id']}", json=north_bdo, headers=owner)
+    assert r.status_code == 422
 
     # No longer for guests: the methods are switched off, not deleted.
     r = world.client.put(
@@ -57,7 +65,7 @@ def test_shared_account_becomes_a_payment_method_at_every_branch(world):
     assert r.status_code == 200, r.text
     assert not _methods(world, owner)["BDO Savings"]["active"]
 
-    # Petty cash and cash drawers need a branch; desks and managers cannot set up.
+    # Every account needs a branch; desks and managers cannot set up.
     r = world.client.post("/accounts", json={"name": "Vault", "kind": "cash"}, headers=owner)
     assert r.status_code == 422
     r = world.client.post("/accounts", json=body, headers=world.login("mgr@banahaw.ph"))
@@ -198,10 +206,25 @@ def test_admin_records_bill_and_dates_and_opening(world):
         "reference": "REF-1",
         "business_date": "2026-11-05",
     }
-    # The accountant can record bills too.
+    # The accountant only looks: no bills, transfers or voids.
     r = world.client.post("/fund-transactions", json=bill, headers=acct)
+    assert r.status_code == 403
+    r = world.client.post("/fund-transactions", json=bill, headers=owner)
     assert r.status_code == 201, r.text
     assert r.json()["business_date"] == "2026-11-05"
+    assert not world.client.get(
+        "/fund-entries", params={"date_from": "2026-11-05"}, headers=acct
+    ).json()["items"][0]["can_void"]
+    r = world.client.post(
+        f"/fund-transactions/{r.json()['id']}/void", json={"reason": "x"}, headers=acct
+    )
+    assert r.status_code == 403
+    r = world.client.post(
+        "/fund-transfers",
+        json={"from_account_id": bpi["id"], "to_account_id": bpi["id"], "amount": "1"},
+        headers=acct,
+    )
+    assert r.status_code == 403
     # Category direction must match; a category is required; not before the opening date.
     assert (
         world.client.post(
