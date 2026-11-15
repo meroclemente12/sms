@@ -17,6 +17,7 @@ function BranchForm({ initial, onDone }: { initial?: Branch; onDone: () => void 
   const [address, setAddress] = useState(initial?.address ?? '')
   const [opens, setOpens] = useState(initial?.opens_at.slice(0, 5) ?? '09:00')
   const [closes, setCloses] = useState(initial?.closes_at.slice(0, 5) ?? '22:00')
+  const [dayStarts, setDayStarts] = useState(initial?.day_starts_at.slice(0, 5) ?? '')
   const [active, setActive] = useState(initial?.active ?? true)
   const { busy, error, run } = useAction()
   const { refresh } = useAuth()
@@ -29,6 +30,8 @@ function BranchForm({ initial, onDone }: { initial?: Branch; onDone: () => void 
       timezone: initial?.timezone ?? 'Asia/Manila',
       opens_at: opens,
       closes_at: closes,
+      // Empty: the app picks a time while the branch is closed (6 AM when it can).
+      day_starts_at: dayStarts || null,
       active,
     }
     const ok = await run(() =>
@@ -55,6 +58,12 @@ function BranchForm({ initial, onDone }: { initial?: Branch; onDone: () => void 
       </Field>
       <Field label="Closes">
         <input type="time" value={closes} onChange={(e) => setCloses(e.target.value)} required />
+      </Field>
+      <Field
+        label="New day starts at"
+        hint="Before this time, sales, payments, pay and the day board still count on the day the branch opened. Pick a time while the branch is closed, or leave empty to pick one automatically."
+      >
+        <input type="time" value={dayStarts} onChange={(e) => setDayStarts(e.target.value)} />
       </Field>
       <label className="check">
         <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /> Active
@@ -127,6 +136,9 @@ function BranchesCard() {
                 </td>
                 <td>
                   {b.opens_at.slice(0, 5)} to {b.closes_at.slice(0, 5)}
+                  {b.closes_at <= b.opens_at && (
+                    <div className="muted small">Night counts on the opening day until {b.day_starts_at.slice(0, 5)}</div>
+                  )}
                 </td>
                 <td>
                   <StatusPill active={b.active} />

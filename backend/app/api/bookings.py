@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import datetime as dt
 import uuid
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time
 from decimal import Decimal
 from typing import Annotated, Literal
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -16,6 +15,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import DeskSession, Staff, StaffSession, ensure_branch
 from app.api.payments import PaymentIn, PaymentOut, payments_for_booking
+from app.business_day import business_date, day_bounds, opening_hours
 from app.discounts import redemption_for
 from app.discounts import refresh as refresh_discount
 from app.lifecycle import InvalidTransition, transition
@@ -76,12 +76,6 @@ def _booking(session: Session, staff: Staff, booking_id: uuid.UUID) -> Booking:
     return booking
 
 
-def _day_bounds(branch: Branch, day: date) -> tuple[datetime, datetime]:
-    tz = ZoneInfo(branch.timezone)
-    start = datetime.combine(day, time(0), tzinfo=tz)
-    return start, datetime.combine(day + timedelta(days=1), time(0), tzinfo=tz)
-
-
 @router.get("/branches/{branch_id}/availability", response_model=list[PairOut])
 def availability(
     ctx: StaffSession,
@@ -133,21 +127,18 @@ class SlotOut(BaseModel):
 def slots(ctx: StaffSession, branch_id: uuid.UUID, body: SlotsIn) -> list[SlotOut]:
     """Free start times, earliest first, each with the best therapist + bed per guest.
 
-    Searches one day from opening (or from ``after``) until closing time.
+    Searches one business day from opening (or from ``after``) until closing time,
+    which may be after midnight.
     """
     db, staff = ctx
     branch = _branch(db, staff, branch_id)
-    tz = ZoneInfo(branch.timezone)
     if body.after is not None:
-        day = body.after.astimezone(tz).date()
+        day = business_date(branch, body.after)
     elif body.date is not None:
         day = body.date
     else:
         raise HTTPException(422, "Give a date or a start moment")
-    opens = datetime.combine(day, branch.opens_at, tzinfo=tz)
-    closes = datetime.combine(day, branch.closes_at, tzinfo=tz)
-    if closes <= opens:
-        closes += timedelta(days=1)
+    opens, closes = opening_hours(branch, day)
     after = max(opens, body.after) if body.after else opens
     wishes = [g.wish() for g in body.guests]
 
@@ -580,6 +571,9 @@ class BoardOut(BaseModel):
     timezone: str
     opens_at: time
     closes_at: time
+    day_starts_at: time = Field(
+        description="The board runs from this time to the same time next day"
+    )
     therapists: list[BoardTherapist]
     beds: list[BoardBed]
     blocks: list[BoardBlock]
@@ -596,7 +590,7 @@ def board(
     """Everything the day board shows for one branch and one day."""
     db, staff = ctx
     branch = _branch(db, staff, branch_id)
-    start, end = _day_bounds(branch, day)
+    start, end = day_bounds(branch, day)
 
     shifts: dict[uuid.UUID, list[Span]] = {}
     for s in db.scalars(
@@ -699,6 +693,7 @@ def board(
         timezone=branch.timezone,
         opens_at=branch.opens_at,
         closes_at=branch.closes_at,
+        day_starts_at=branch.day_starts_at,
         therapists=therapists,
         beds=beds,
         blocks=blocks,

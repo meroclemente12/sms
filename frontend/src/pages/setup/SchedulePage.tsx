@@ -5,7 +5,7 @@ import type { BlockReason, Branch, Room, Shift, Therapist, TimeBlock } from '../
 import { useAuth } from '../../auth'
 import { Card, Empty, ErrorNote, Field, ReadOnlyNote } from '../../components/ui'
 import { useAction, useLoad } from '../../components/hooks'
-import { addDays, dayLabel, mondayOf, timeIn, todayIn, zonedIso } from '../../time'
+import { addDays, businessToday, dayLabel, mondayOf, timeIn, zonedIso } from '../../time'
 
 // --- Shifts grid ---------------------------------------------------------------------
 
@@ -193,7 +193,7 @@ export default function SchedulePage() {
   const { data: branches } = useLoad(() => api<Branch[]>('/branches'), [])
   const branch = branches?.find((b) => b.id === branchId)
   const tz = branch?.timezone ?? 'Asia/Manila'
-  const [week, setWeek] = useState(() => mondayOf(todayIn(tz)))
+  const [week, setWeek] = useState(() => mondayOf(businessToday(tz, branchRef?.day_starts_at)))
   const days = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(week, i)), [week])
 
   const { data: therapists } = useLoad(
@@ -250,7 +250,7 @@ export default function SchedulePage() {
         actions={
           <div className="toolbar">
             <button onClick={() => setWeek(addDays(week, -7))}>Previous week</button>
-            <button onClick={() => setWeek(mondayOf(todayIn(tz)))}>This week</button>
+            <button onClick={() => setWeek(mondayOf(businessToday(tz, branchRef?.day_starts_at)))}>This week</button>
             <button onClick={() => setWeek(addDays(week, 7))}>Next week</button>
             {canManage && (
               <button onClick={() => void copyPrevious()} disabled={copy.busy}>
@@ -352,7 +352,7 @@ export default function SchedulePage() {
             tz={tz}
             therapists={activeTherapists}
             rooms={rooms ?? []}
-            defaultDay={todayIn(tz) >= week && todayIn(tz) <= addDays(week, 6) ? todayIn(tz) : week}
+            defaultDay={businessToday(tz, branchRef?.day_starts_at) >= week && businessToday(tz, branchRef?.day_starts_at) <= addDays(week, 6) ? businessToday(tz, branchRef?.day_starts_at) : week}
             onDone={() => void blocks.reload()}
           />
         )}

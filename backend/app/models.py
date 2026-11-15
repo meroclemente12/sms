@@ -142,6 +142,10 @@ class Branch(TimestampMixin, Base):
     timezone: Mapped[str] = mapped_column(String(64), default="Asia/Manila")
     opens_at: Mapped[time] = mapped_column(Time, default=time(9, 0))
     closes_at: Mapped[time] = mapped_column(Time, default=time(22, 0))
+    # When one business day ends and the next begins (during closed hours). Sales,
+    # payments, pay and the day board from this time until the same time the next
+    # morning belong to one date, so a 1 PM to 1 AM branch keeps its night together.
+    day_starts_at: Mapped[time] = mapped_column(Time, default=time(6, 0))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
 

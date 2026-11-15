@@ -15,13 +15,14 @@ from __future__ import annotations
 
 import uuid
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.business_day import business_date, days_bounds, opening_hours
 from app.models import (
     Booking,
     BookingItem,
@@ -57,7 +58,8 @@ def now() -> datetime:
 
 
 def branch_today(branch: Branch) -> date:
-    return now().astimezone(ZoneInfo(branch.timezone)).date()
+    """Today's business date at the branch (still yesterday's until the day starts)."""
+    return business_date(branch, now())
 
 
 # --- Settings ------------------------------------------------------------------------
@@ -117,10 +119,7 @@ def open_attendance(session: Session, therapist_id: uuid.UUID) -> TherapistAtten
 
 def _close_stale(session: Session, row: TherapistAttendance, branch: Branch) -> None:
     """A clock-in left open from an earlier day ends at that day's closing time."""
-    tz = ZoneInfo(branch.timezone)
-    closes = datetime.combine(row.work_date, branch.closes_at, tzinfo=tz)
-    if branch.closes_at <= branch.opens_at:
-        closes += timedelta(days=1)
+    _opens, closes = opening_hours(branch, row.work_date)
     row.clock_out_at = max(row.clock_in_at, min(closes, now()))
 
 
@@ -233,9 +232,7 @@ def week_pay(session: Session, branch: Branch, any_day: date) -> WeekPay:
     settings = settings_for(session, branch.tenant_id)
     start = week_start(any_day, settings.week_starts_on)
     end = start + timedelta(days=6)
-    tz = ZoneInfo(branch.timezone)
-    from_ = datetime.combine(start, time(0), tzinfo=tz)
-    until = datetime.combine(end + timedelta(days=1), time(0), tzinfo=tz)
+    from_, until = days_bounds(branch, start, end)
     days = [start + timedelta(days=i) for i in range(7)]
 
     people: dict[uuid.UUID, TherapistPay] = {}
@@ -269,7 +266,7 @@ def week_pay(session: Session, branch: Branch, any_day: date) -> WeekPay:
     )
     for item, t, variant_commission in items:
         p = person(t)
-        line = p.days[item.starts_at.astimezone(tz).date()]
+        line = p.days[business_date(branch, item.starts_at)]
         commission = item.commission if item.commission is not None else variant_commission
         line.services += 1
         line.sales += item.price

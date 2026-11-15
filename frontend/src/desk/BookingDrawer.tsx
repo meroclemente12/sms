@@ -4,6 +4,7 @@ import { api } from '../api'
 import type { Booking, BookingEvent, BookingStatus, Channel, Price, Slot } from '../api'
 import { Drawer, ErrorNote, Field, StatusBadge } from '../components/ui'
 import { useAction, useLoad } from '../components/hooks'
+import { useBusinessDay } from '../auth'
 import { clockIn, dayOf, longDayLabel, peso, timeIn } from '../time'
 import SlotPicker from './SlotPicker'
 import { BookingPayments, Checkout } from './Payments'
@@ -267,7 +268,9 @@ function MoveForm({
   onMoved: (b: Booking) => void
 }) {
   const prices = useLoad(() => api<Price[]>(`/branches/${booking.branch_id}/prices`), [booking.branch_id])
-  const [day, setDay] = useState(dayOf(booking.starts_at, tz))
+  const business = useBusinessDay()
+  const bookedDay = business.dayOf(booking.starts_at)
+  const [day, setDay] = useState(bookedDay)
   const [variantId, setVariantId] = useState(booking.variant_id)
   const [keep, setKeep] = useState(true)
   const [slot, setSlot] = useState<Slot | null>(null)
@@ -309,7 +312,7 @@ function MoveForm({
         value={slot}
         onChange={setSlot}
         names={names}
-        preferTime={day === dayOf(booking.starts_at, tz) ? timeIn(booking.starts_at, tz) : null}
+        preferTime={day === bookedDay ? timeIn(booking.starts_at, tz) : null}
       />
       <div className="form-actions">
         <button

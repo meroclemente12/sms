@@ -20,12 +20,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from decimal import ROUND_DOWN, Decimal
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import and_, exists, func, not_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from app.business_day import business_date
 from app.models import (
     ACTIVE_STATUSES,
     Bed,
@@ -104,7 +104,7 @@ def _on_duty(session: Session, branch_id: uuid.UUID, w: Window):
     """Today: clocked in at the desk. Other days: a shift covers the service."""
     branch = session.get(Branch, branch_id)
     today = branch_today(branch)
-    if w.starts_at.astimezone(ZoneInfo(branch.timezone)).date() == today:
+    if business_date(branch, w.starts_at) == today:
         return exists().where(
             TherapistAttendance.therapist_id == Therapist.id,
             TherapistAttendance.branch_id == branch_id,

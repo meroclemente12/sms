@@ -11,10 +11,9 @@ Who can do what:
 from __future__ import annotations
 
 import uuid
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
-from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
@@ -30,6 +29,7 @@ from app.api.deps import (
     StaffSession,
     ensure_branch,
 )
+from app.business_day import days_bounds
 from app.models import (
     Booking,
     BookingItem,
@@ -44,6 +44,7 @@ from app.models import (
     User,
     UserRole,
 )
+from app.pay import branch_today
 from app.payments import (
     PaymentError,
     PaymentLine,
@@ -279,16 +280,14 @@ def list_payments(
     session, staff = ctx
     ensure_branch(session, staff, branch_id)
     branch = session.get(Branch, branch_id)
-    tz = ZoneInfo(branch.timezone)
-    today = datetime.now(tz).date()
+    today = branch_today(branch)
     date_to = date_to or date_from or today
     date_from = date_from or date_to
     if date_to < date_from:
         raise HTTPException(422, "The end date is before the start date")
     if (date_to - date_from).days > 92:
         raise HTTPException(422, "Pick at most three months at a time")
-    start = datetime.combine(date_from, time(0), tzinfo=tz)
-    end = datetime.combine(date_to + timedelta(days=1), time(0), tzinfo=tz)
+    start, end = days_bounds(branch, date_from, date_to)
 
     first_item = (
         select(BookingItem.starts_at, ServiceVariant.service_id)

@@ -27,6 +27,24 @@ export function clockIn(iso: string, tz: string): string {
   return new Intl.DateTimeFormat('en-PH', { timeZone: tz, hour: 'numeric', minute: '2-digit' }).format(new Date(iso))
 }
 
+/**
+ * The business date (YYYY-MM-DD) of a moment at a branch. A branch open past midnight
+ * keeps its night together: until `dayStart` (e.g. "06:00") it is still the day before.
+ */
+export function businessDayOf(iso: string, tz: string, dayStart = '00:00'): string {
+  return dayOf(new Date(Date.parse(iso) - minutesOf(dayStart) * 60000).toISOString(), tz)
+}
+
+/** Today's business date at a branch (see businessDayOf). */
+export function businessToday(tz: string, dayStart = '00:00'): string {
+  return businessDayOf(new Date().toISOString(), tz, dayStart)
+}
+
+/** ISO timestamp `minute` minutes after midnight starting `day` (may be past the next midnight). */
+export function isoAt(day: string, minute: number, tz: string): string {
+  return new Date(Date.parse(zonedIso(day, '00:00', tz)) + minute * 60000).toISOString()
+}
+
 /** The branch-calendar day (YYYY-MM-DD) of an ISO timestamp. */
 export function dayOf(iso: string, tz: string): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz }).format(new Date(iso))
