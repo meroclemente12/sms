@@ -101,6 +101,9 @@ export default function Layout() {
               <NavLink to="/accounting" end>
                 Accounting
               </NavLink>
+              <NavLink to="/accounting/dashboard" className="nav-sub">
+                Dashboard
+              </NavLink>
               <NavLink to="/accounting/recurring" className="nav-sub">
                 Recurring
               </NavLink>

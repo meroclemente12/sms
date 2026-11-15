@@ -13,6 +13,7 @@ import Accounting from './pages/Accounting'
 import PettyCash from './pages/PettyCash'
 import Recurring from './pages/Recurring'
 import Allocations from './pages/Allocations'
+import AccountingDashboard from './pages/AccountingDashboard'
 import Payments from './pages/Payments'
 import SchedulePage from './pages/setup/SchedulePage'
 import ServicesPage from './pages/setup/ServicesPage'
@@ -43,6 +44,7 @@ function Routed() {
         {canDoAccounts && <Route path="accounting" element={<Accounting />} />}
         {canDoAccounts && <Route path="accounting/recurring" element={<Recurring />} />}
         {canDoAccounts && <Route path="accounting/allocations" element={<Allocations />} />}
+        {canDoAccounts && <Route path="accounting/dashboard" element={<AccountingDashboard />} />}
         {canManage && (
           <>
             <Route path="setup/branches" element={<BranchesPage />} />
