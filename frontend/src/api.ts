@@ -73,6 +73,9 @@ export type Role = 'admin' | 'manager' | 'front_desk' | 'accountant'
 export interface BranchRef {
   id: string
   name: string
+  timezone: string
+  /** When the business day starts ("06:00:00"); before it, it is still the day before. */
+  day_starts_at: string
 }
 
 export interface Me {
@@ -92,6 +95,7 @@ export interface Branch {
   timezone: string
   opens_at: string
   closes_at: string
+  day_starts_at: string
   active: boolean
 }
 
@@ -377,6 +381,8 @@ export interface Board {
   timezone: string
   opens_at: string
   closes_at: string
+  /** The board runs from this time until the same time the next morning. */
+  day_starts_at: string
   therapists: BoardTherapist[]
   beds: BoardBed[]
   blocks: BoardBlock[]

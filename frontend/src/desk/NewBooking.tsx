@@ -4,7 +4,8 @@ import { api } from '../api'
 import type { Booking, Channel, Client, GuestWish, PreferredGender, Price, Service, Slot, Therapist } from '../api'
 import { Drawer, ErrorNote, Field } from '../components/ui'
 import { useAction, useLoad } from '../components/hooks'
-import { longDayLabel, peso, todayIn } from '../time'
+import { useBusinessDay } from '../auth'
+import { longDayLabel, peso } from '../time'
 import ClientPicker from './ClientPicker'
 import SlotPicker from './SlotPicker'
 import type { Names } from './SlotPicker'
@@ -97,7 +98,8 @@ export default function NewBooking({
   const [channelId, setChannelId] = useState('')
   const [client, setClient] = useState<Client | null>(null)
   const [variantId, setVariantId] = useState('')
-  const [day, setDay] = useState(start.walkIn ? todayIn(tz) : start.day)
+  const business = useBusinessDay()
+  const [day, setDay] = useState(start.walkIn ? business.today() : start.day)
   const [guests, setGuests] = useState<GuestForm[]>([{ ...NO_GUEST, therapistId: start.therapistId ?? '' }])
   const [size, setSize] = useState(1)
   const [males, setMales] = useState(0)
@@ -114,7 +116,7 @@ export default function NewBooking({
   const group = !couples && size > 1
   const guestCount = couples ? 2 : size
   const anyCount = Math.max(0, size - males - females)
-  const isToday = day === todayIn(tz)
+  const isToday = day === business.today()
   // Today only therapists the desk has clocked in can take guests.
   const skilled = useMemo(
     () =>

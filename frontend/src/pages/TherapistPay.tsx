@@ -1,17 +1,16 @@
 import { Fragment, useState } from 'react'
 import { api } from '../api'
 import type { TherapistPay as Row, WeekPay } from '../api'
-import { useAuth } from '../auth'
+import { useAuth, useBusinessDay } from '../auth'
 import { Card, Empty, ErrorNote } from '../components/ui'
 import { useLoad } from '../components/hooks'
-import { addDays, dayLabel, peso, todayIn } from '../time'
-
-const DEFAULT_TZ = 'Asia/Manila'
+import { addDays, dayLabel, peso } from '../time'
 
 /** One week's pay per therapist: commission, daily allowance and quota bonus. */
 export default function TherapistPay() {
   const { branch, isAdmin } = useAuth()
-  const [day, setDay] = useState(() => todayIn(DEFAULT_TZ))
+  const business = useBusinessDay()
+  const [day, setDay] = useState(() => business.today())
   const [open, setOpen] = useState<string | null>(null)
   const { data, error } = useLoad(
     () => (branch ? api<WeekPay>(`/branches/${branch.id}/pay?week=${day}`) : Promise.resolve(null)),
@@ -22,7 +21,8 @@ export default function TherapistPay() {
   const s = data?.settings
   const bySales = s?.quota_basis === 'sales'
   const progress = (r: Row) => (bySales ? peso(r.quota_progress) : `${Number(r.quota_progress)} services`)
-  const thisWeek = data && todayIn(DEFAULT_TZ) >= data.week_start && todayIn(DEFAULT_TZ) <= data.week_end
+  const today = business.today()
+  const thisWeek = data && today >= data.week_start && today <= data.week_end
 
   function exportCsv() {
     if (!data) return
@@ -47,7 +47,7 @@ export default function TherapistPay() {
         <button onClick={() => setDay(addDays(data?.week_start ?? day, -7))} aria-label="Previous week">
           ‹
         </button>
-        <button onClick={() => setDay(todayIn(DEFAULT_TZ))} disabled={Boolean(thisWeek)}>
+        <button onClick={() => setDay(business.today())} disabled={Boolean(thisWeek)}>
           This week
         </button>
         <button onClick={() => setDay(addDays(data?.week_start ?? day, 7))} aria-label="Next week">

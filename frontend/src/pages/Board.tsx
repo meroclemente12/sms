@@ -2,14 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { DragEvent, MouseEvent } from 'react'
 import { api } from '../api'
 import type { Board as BoardData, BoardItem, BoardTherapist, Booking, Span } from '../api'
-import { useAuth } from '../auth'
+import { useAuth, useBusinessDay } from '../auth'
 import { ErrorNote, StatusBadge } from '../components/ui'
 import { useAction, useLoad } from '../components/hooks'
 import BookingDrawer from '../desk/BookingDrawer'
 import NewBooking from '../desk/NewBooking'
 import type { BookingStart } from '../desk/NewBooking'
 import type { Names } from '../desk/SlotPicker'
-import { addDays, clockIn, dayOf, hhmm, longDayLabel, minutesOf, todayIn, zonedIso } from '../time'
+import { addDays, businessDayOf, businessToday, clockIn, hhmm, isoAt, longDayLabel, minutesOf, zonedIso } from '../time'
 
 const PX_PER_MIN = 1.6 // 15 minutes = 24px
 const STEP = 15
@@ -50,7 +50,8 @@ function readView(): View {
 
 export default function Board() {
   const { branch } = useAuth()
-  const [day, setDay] = useState(() => todayIn(DEFAULT_TZ))
+  const business = useBusinessDay()
+  const [day, setDay] = useState(() => business.today())
   const [view, setViewState] = useState<View>(readView)
   const [gender, setGenderState] = useState<GenderFilter>(readGender)
   const [showCancelled, setShowCancelled] = useState(false)
@@ -66,7 +67,12 @@ export default function Board() {
         : Promise.resolve(null),
     [branch?.id, day, showCancelled],
   )
-  const tz = board?.timezone ?? DEFAULT_TZ
+  const tz = board?.timezone ?? branch?.timezone ?? DEFAULT_TZ
+  // The board runs from the business-day start (e.g. 6 AM) to the same time next morning,
+  // so a branch open 1 PM to 1 AM shows its whole night on one day.
+  const dayStart = board?.day_starts_at ?? business.dayStart
+  const todayIn = (zone: string) => businessToday(zone, dayStart)
+  const dayOf = (iso: string, zone: string) => businessDayOf(iso, zone, dayStart)
 
   // Keep every desk's board current: refresh every 20 s while the tab is visible.
   useEffect(() => {
@@ -134,7 +140,7 @@ export default function Board() {
         colour: null,
         shifts: null,
       }))
-    const isToday = board.date === todayIn(tz)
+    const isToday = board.date === businessToday(tz, board.day_starts_at)
     const shiftText = (t: BoardTherapist) =>
       t.shifts.length > 0 ? t.shifts.map((s) => `${clockIn(s.starts_at, tz)}–${clockIn(s.ends_at, tz)}`).join(', ') : 'Day off'
     // Today: clocked-in therapists first (only they can be booked). Other days: on shift first.
@@ -168,15 +174,19 @@ export default function Board() {
   // The visible hours: opening to closing, stretched to fit anything booked outside them.
   const [startMin, endMin] = useMemo(() => {
     if (!board) return [9 * 60, 22 * 60]
+    // Minutes from midnight at the start of `day`; past midnight they go above 24 * 60.
+    const first = minutesOf(board.day_starts_at ?? '00:00')
+    const last = first + 24 * 60
     let s = minutesOf(board.opens_at)
+    if (s < first) s += 24 * 60
     let e = minutesOf(board.closes_at)
     if (e <= s) e += 24 * 60
-    const dayStart = Date.parse(zonedIso(day, '00:00', tz))
+    const midnight = Date.parse(zonedIso(day, '00:00', tz))
     for (const it of board.items) {
-      s = Math.min(s, Math.floor((Date.parse(it.starts_at) - dayStart) / 60000 / 60) * 60)
-      e = Math.max(e, Math.ceil((Date.parse(it.blocked_until) - dayStart) / 60000 / 60) * 60)
+      s = Math.min(s, Math.floor((Date.parse(it.starts_at) - midnight) / 60000 / 60) * 60)
+      e = Math.max(e, Math.ceil((Date.parse(it.blocked_until) - midnight) / 60000 / 60) * 60)
     }
-    return [Math.max(0, s), Math.min(24 * 60, e)]
+    return [Math.max(first, s), Math.min(last, e)]
   }, [board, day, tz])
 
   const dayStartMs = useMemo(() => Date.parse(zonedIso(day, '00:00', tz)), [day, tz])
@@ -197,13 +207,13 @@ export default function Board() {
   /** Therapists free for the whole hovered 15 minutes: on shift, not booked, not blocked. */
   const freeAtHover = useMemo(() => {
     if (!board || !hover) return null
-    const from = Date.parse(zonedIso(day, hhmm(hover.minute), tz))
+    const from = Date.parse(isoAt(day, hover.minute, tz))
     const to = from + STEP * 60000
     const overlaps = (a: string, b: string) => Date.parse(a) < to && Date.parse(b) > from
     const busy = new Set<string>()
     for (const it of board.items) if (ACTIVE.has(it.status) && overlaps(it.starts_at, it.ends_at)) busy.add(it.therapist_id)
     for (const bl of board.blocks) if (bl.therapist_id && overlaps(bl.starts_at, bl.ends_at)) busy.add(bl.therapist_id)
-    const isToday = board.date === todayIn(tz)
+    const isToday = board.date === businessToday(tz, board.day_starts_at)
     const free = board.therapists.filter(
       (t) =>
         !busy.has(t.id) &&
@@ -234,7 +244,7 @@ export default function Board() {
     setNewBooking({
       walkIn: false,
       day,
-      time: hhmm(m),
+      time: hhmm(m % (24 * 60)),
       therapistId: view === 'therapists' ? lane.id : null,
       bedId: view === 'beds' ? lane.id : null,
     })
@@ -265,7 +275,7 @@ export default function Board() {
     setDropHint(null)
     if (!d) return
     const minute = minuteAt(e, d.grabMin)
-    const startsAt = zonedIso(day, hhmm(minute), tz)
+    const startsAt = isoAt(day, minute, tz)
     const sameLane = view === 'therapists' ? d.item.therapist_id === lane.id : d.item.bed_id === lane.id
     if (sameLane && Date.parse(startsAt) === Date.parse(d.item.starts_at)) return
     const guest = view === 'therapists' ? { therapist_id: lane.id } : { bed_id: lane.id, therapist_id: d.item.therapist_id }
@@ -369,7 +379,7 @@ export default function Board() {
       <p className="free-summary" aria-live="polite">
         {hover && freeAtHover ? (
           <>
-            Free at {clockIn(zonedIso(day, hhmm(hover.minute), tz), tz)}: <strong>{freeAtHover.male}</strong> male ·{' '}
+            Free at {clockIn(isoAt(day, hover.minute, tz), tz)}: <strong>{freeAtHover.male}</strong> male ·{' '}
             <strong>{freeAtHover.female}</strong> female · <strong>{freeAtHover.total}</strong> in all
           </>
         ) : (
@@ -426,12 +436,12 @@ export default function Board() {
             <div className="time-gutter" style={{ height }}>
               {hours.map((m) => (
                 <span key={m} style={{ top: (m - startMin) * PX_PER_MIN }}>
-                  {clockIn(zonedIso(day, hhmm(m), tz), tz)}
+                  {clockIn(isoAt(day, m, tz), tz)}
                 </span>
               ))}
               {hover && (
                 <span className="hover-time" style={{ top: (hover.minute - startMin) * PX_PER_MIN, height: STEP * PX_PER_MIN }}>
-                  {clockIn(zonedIso(day, hhmm(hover.minute), tz), tz)}
+                  {clockIn(isoAt(day, hover.minute, tz), tz)}
                 </span>
               )}
             </div>
@@ -502,7 +512,7 @@ export default function Board() {
                       height: (Date.parse(drag.current.item.ends_at) - Date.parse(drag.current.item.starts_at)) / 60000 * PX_PER_MIN,
                     }}
                   >
-                    {clockIn(zonedIso(day, hhmm(dropHint.minute), tz), tz)}
+                    {clockIn(isoAt(day, dropHint.minute, tz), tz)}
                   </div>
                 )}
                 {nowY !== null && nowY >= 0 && nowY <= height && <div className="now-line" style={{ top: nowY }} />}

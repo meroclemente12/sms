@@ -1,11 +1,11 @@
 import { useState } from 'react'
 import { api } from '../api'
 import type { PaymentList, PaymentMethod, PaymentRow } from '../api'
-import { useAuth } from '../auth'
+import { useAuth, useBusinessDay } from '../auth'
 import { Card, Empty, ErrorNote } from '../components/ui'
 import { useAction, useLoad } from '../components/hooks'
 import { PaymentBadge } from '../desk/Payments'
-import { addDays, clockIn, dayLabel, dayOf, peso, todayIn } from '../time'
+import { addDays, clockIn, dayLabel, dayOf, peso } from '../time'
 
 type Filter = 'pending' | 'flagged' | 'verified' | 'cashless' | 'cash'
 
@@ -110,9 +110,10 @@ function Row({ p, tz, onDone }: { p: PaymentRow; tz: string; onDone: () => void 
 
 export default function Payments() {
   const { branch } = useAuth()
+  const business = useBusinessDay()
   const branchId = branch?.id ?? ''
   const [tz, setTz] = useState(DEFAULT_TZ)
-  const today = todayIn(tz)
+  const today = business.today()
   const [from, setFrom] = useState(today)
   const [to, setTo] = useState(today)
   const [filter, setFilter] = useState<Filter>('pending')

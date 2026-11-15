@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, time
 
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel, Field
@@ -27,6 +27,8 @@ class LoginIn(BaseModel):
 class BranchRef(BaseModel):
     id: uuid.UUID
     name: str
+    timezone: str
+    day_starts_at: time
 
 
 class MeOut(BaseModel):
@@ -60,7 +62,10 @@ def _me(session, user: User) -> MeOut:
         role=user.role,
         tenant_id=user.tenant_id,
         tenant_name=tenant.name,
-        branches=[BranchRef(id=b.id, name=b.name) for b in session.scalars(q)],
+        branches=[
+            BranchRef(id=b.id, name=b.name, timezone=b.timezone, day_starts_at=b.day_starts_at)
+            for b in session.scalars(q)
+        ],
     )
 
 

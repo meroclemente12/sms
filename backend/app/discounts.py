@@ -10,11 +10,11 @@ import uuid
 from dataclasses import dataclass
 from datetime import date
 from decimal import ROUND_HALF_UP, Decimal
-from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.business_day import business_date
 from app.models import (
     Booking,
     BookingEvent,
@@ -62,7 +62,7 @@ def use_count(session: Session, code_id: uuid.UUID) -> int:
 def _visit_date(session: Session, booking: Booking) -> date:
     branch = session.get(Branch, booking.branch_id)
     first = min(i.starts_at for i in booking.items)
-    return first.astimezone(ZoneInfo(branch.timezone)).date()
+    return business_date(branch, first)
 
 
 def _eligible_total(session: Session, booking: Booking, code: DiscountCode) -> Decimal:

@@ -2,6 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from 'react'
 import { api, getToken, setToken, setUnauthorizedHandler } from './api'
 import type { BranchRef, Me } from './api'
+import { businessDayOf, businessToday } from './time'
 
 interface AuthState {
   me: Me | null
@@ -100,4 +101,23 @@ export function useAuth(): AuthState {
   const ctx = useContext(AuthContext)
   if (!ctx) throw new Error('useAuth must be used inside AuthProvider')
   return ctx
+}
+
+/**
+ * Business dates at the current branch: a branch open past midnight keeps its night
+ * on the day it opened, until its business day starts (e.g. 6 AM).
+ */
+// eslint-disable-next-line react-refresh/only-export-components
+export function useBusinessDay() {
+  const { branch } = useAuth()
+  const tz = branch?.timezone ?? 'Asia/Manila'
+  const dayStart = branch?.day_starts_at ?? '00:00'
+  return useMemo(
+    () => ({
+      dayStart,
+      today: () => businessToday(tz, dayStart),
+      dayOf: (iso: string) => businessDayOf(iso, tz, dayStart),
+    }),
+    [tz, dayStart],
+  )
 }

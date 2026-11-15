@@ -23,6 +23,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.deps import AdminSession, ManagerSession, Staff, StaffSession, ensure_branch
+from app.business_day import fits_closed_hours, is_open_all_day, suggest_day_start
 from app.models import (
     Bed,
     BedType,
@@ -76,6 +77,10 @@ class BranchIn(BaseModel):
     timezone: str = "Asia/Manila"
     opens_at: time = time(9, 0)
     closes_at: time = time(22, 0)
+    day_starts_at: time | None = Field(
+        default=None,
+        description="When the business day starts (during closed hours). Empty = pick one.",
+    )
     active: bool = True
 
     @field_validator("timezone")
@@ -95,7 +100,28 @@ class BranchOut(Out):
     timezone: str
     opens_at: time
     closes_at: time
+    day_starts_at: time
     active: bool
+
+
+def _apply_branch(branch: Branch, body: BranchIn) -> None:
+    _apply(branch, body, exclude={"day_starts_at"})
+    start = body.day_starts_at
+    if start is None:
+        start = branch.day_starts_at
+        if start is None or not fits_closed_hours(start, body.opens_at, body.closes_at):
+            start = suggest_day_start(body.opens_at, body.closes_at)
+    elif not fits_closed_hours(start, body.opens_at, body.closes_at):
+        if is_open_all_day(body.opens_at, body.closes_at):
+            raise HTTPException(
+                422, "A branch open all day starts its business day at its opening time"
+            )
+        raise HTTPException(
+            422,
+            "The business day must start while the branch is closed, between "
+            f"{body.closes_at:%H:%M} and {body.opens_at:%H:%M}",
+        )
+    branch.day_starts_at = start
 
 
 @router.get("/branches", response_model=list[BranchOut])
@@ -109,7 +135,7 @@ def list_branches(ctx: StaffSession) -> list[Branch]:
 def create_branch(ctx: AdminSession, body: BranchIn) -> Branch:
     session, staff = ctx
     branch = Branch(tenant_id=staff.tenant_id)
-    _apply(branch, body)
+    _apply_branch(branch, body)
     session.add(branch)
     _flush(session)
     add_default_methods(session, branch)
@@ -122,7 +148,7 @@ def update_branch(ctx: ManagerSession, branch_id: uuid.UUID, body: BranchIn) -> 
     session, staff = ctx
     ensure_branch(session, staff, branch_id)
     branch = _get(session, Branch, branch_id, "Branch")
-    _apply(branch, body)
+    _apply_branch(branch, body)
     _flush(session)
     return branch
 
