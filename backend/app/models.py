@@ -102,6 +102,20 @@ class DiscountKind(enum.StrEnum):
     fixed = "fixed"
 
 
+class AccountKind(enum.StrEnum):
+    """What kind of place money sits in."""
+
+    cash = "cash"  # the cash drawer at a branch
+    bank = "bank"
+    ewallet = "ewallet"  # GCash, Maya
+    petty_cash = "petty_cash"
+
+
+class FundDirection(enum.StrEnum):
+    money_in = "in"
+    money_out = "out"
+
+
 class PaymentStatus(enum.StrEnum):
     """Where a payment is in the accountant's check. Cash is not checked."""
 
@@ -476,6 +490,11 @@ class PaymentMethod(TimestampMixin, Base):
     needs_reference: Mapped[bool] = mapped_column(Boolean, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # The fund account the money lands in. Methods are made and kept in step from the
+    # account (Setup > Accounts), one per branch where guests can pay into it.
+    account_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("fund_accounts.id", ondelete="SET NULL"), index=True
+    )
 
 
 class Payment(TimestampMixin, Base):
@@ -607,6 +626,97 @@ class PaySettings(TimestampMixin, Base):
     )
     # 0 = Monday ... 6 = Sunday
     week_starts_on: Mapped[int] = mapped_column(Integer, default=0)
+
+
+# --- Accounting ----------------------------------------------------------------------
+
+
+class FundAccount(TimestampMixin, Base):
+    """Where money is kept: a branch's cash drawer or petty cash, a bank account, GCash.
+
+    ``branch_id`` is empty for an account shared by every branch (one BPI account that
+    all branches deposit into). Petty cash and the cash drawer always belong to a branch.
+    The balance is the opening balance plus the ledger (fund_transactions) plus guest
+    payments made with a payment method linked to the account."""
+
+    __tablename__ = "fund_accounts"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "branch_id", "name", postgresql_nulls_not_distinct=True),
+        _enum_check("kind", AccountKind),
+        CheckConstraint(
+            "branch_id IS NOT NULL OR kind IN ('bank', 'ewallet')", name="local_kinds_need_branch"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = _tenant_fk()
+    branch_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("branches.id", ondelete="CASCADE"), index=True
+    )
+    name: Mapped[str] = mapped_column(String(100))
+    kind: Mapped[str] = mapped_column(String(20), default=AccountKind.bank)
+    account_number: Mapped[str | None] = mapped_column(String(100))
+    opening_balance: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=Decimal(0))
+    opening_date: Mapped[date] = mapped_column(Date)
+    # Guests can pay into it at check-out (a payment method is kept for it).
+    accepts_payments: Mapped[bool] = mapped_column(Boolean, default=False)
+    needs_reference: Mapped[bool] = mapped_column(Boolean, default=True)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class FundCategory(TimestampMixin, Base):
+    """What a transaction was for: Laundry, Electricity, Salaries, Other income..."""
+
+    __tablename__ = "fund_categories"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name"),
+        _enum_check("direction", FundDirection),
+    )
+
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = _tenant_fk()
+    name: Mapped[str] = mapped_column(String(100))
+    direction: Mapped[str] = mapped_column(String(3), default=FundDirection.money_out)
+    # The front desk may log petty cash expenses in this category.
+    desk_can_use: Mapped[bool] = mapped_column(Boolean, default=False)
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+
+class FundTransaction(TimestampMixin, Base):
+    """One movement of money into or out of one account.
+
+    A transfer (petty cash refill, cash deposited to the bank) is two rows sharing a
+    ``transfer_id``: out of one account and into the other. Guest payments are not
+    copied here; they are read from ``payments``. Nothing is deleted: a mistake is
+    voided, with a reason, and stops counting."""
+
+    __tablename__ = "fund_transactions"
+    __table_args__ = (
+        CheckConstraint("amount > 0", name="fund_amount_positive"),
+        _enum_check("direction", FundDirection),
+    )
+
+    id: Mapped[uuid.UUID] = _pk()
+    tenant_id: Mapped[uuid.UUID] = _tenant_fk()
+    branch_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("branches.id"), index=True)
+    account_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("fund_accounts.id"), index=True)
+    direction: Mapped[str] = mapped_column(String(3))
+    amount: Mapped[Decimal] = mapped_column(Numeric(12, 2))
+    # The business date it belongs to (see app.business_day).
+    business_date: Mapped[date] = mapped_column(Date, index=True)
+    category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("fund_categories.id"))
+    description: Mapped[str | None] = mapped_column(Text)
+    reference: Mapped[str | None] = mapped_column(String(100))
+    transfer_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), index=True)
+    recorded_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    recorded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), default=func.clock_timestamp()
+    )
+    voided_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    voided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    void_reason: Mapped[str | None] = mapped_column(Text)
 
 
 # --- Access --------------------------------------------------------------------------

@@ -14,6 +14,7 @@ from sqlalchemy import select
 
 from app.cli import create_tenant
 from app.db import SessionLocal, set_tenant
+from app.funds import add_default_accounts, ensure_categories
 from app.lifecycle import transition
 from app.models import (
     Bed,
@@ -34,7 +35,6 @@ from app.models import (
     UserRole,
 )
 from app.pay import clock_in, default_commission
-from app.payments import add_default_methods
 from app.scheduling import GuestRequest, GuestWish, create_booking, pick_pairs
 from app.security import hash_password
 
@@ -78,7 +78,8 @@ def seed_demo(password: str = DEMO_PASSWORD) -> bool:
         main = Branch(tenant_id=tid, name="Main", address="Lucena City, Quezon", timezone=TZ)
         session.add(main)
         session.flush()
-        add_default_methods(session, main)
+        add_default_accounts(session, main, datetime.now(tz).date())
+        ensure_categories(session, tid)
         bed_types = {n: BedType(tenant_id=tid, name=n) for n in ("Massage bed", "Foot spa chair")}
         session.add_all(bed_types.values())
         session.flush()

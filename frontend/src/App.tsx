@@ -8,7 +8,9 @@ import Clients from './pages/Clients'
 import BranchesPage from './pages/setup/BranchesPage'
 import ChannelsPage from './pages/setup/ChannelsPage'
 import DiscountCodesPage from './pages/setup/DiscountCodesPage'
-import PaymentMethodsPage from './pages/setup/PaymentMethodsPage'
+import AccountsPage from './pages/setup/AccountsPage'
+import Accounting from './pages/Accounting'
+import PettyCash from './pages/PettyCash'
 import Payments from './pages/Payments'
 import SchedulePage from './pages/setup/SchedulePage'
 import ServicesPage from './pages/setup/ServicesPage'
@@ -18,7 +20,7 @@ import PaySettingsPage from './pages/setup/PaySettingsPage'
 import TherapistPay from './pages/TherapistPay'
 
 function Routed() {
-  const { me, loading, canManage, isAdmin, isAccountant, canCheckPayments } = useAuth()
+  const { me, loading, canManage, isAdmin, isAccountant, canCheckPayments, canDoAccounts } = useAuth()
   if (loading) return <p className="loading">Loading…</p>
   if (!me) return <Login />
   return (
@@ -31,10 +33,12 @@ function Routed() {
             <Route index element={<Board />} />
             <Route path="clients" element={<Clients />} />
             <Route path="clients/:clientId" element={<Clients />} />
+            <Route path="petty-cash" element={<PettyCash />} />
           </>
         )}
         {canCheckPayments && <Route path="payments" element={<Payments />} />}
         {canCheckPayments && <Route path="pay" element={<TherapistPay />} />}
+        {canDoAccounts && <Route path="accounting" element={<Accounting />} />}
         {canManage && (
           <>
             <Route path="setup/branches" element={<BranchesPage />} />
@@ -42,12 +46,13 @@ function Routed() {
             <Route path="setup/therapists" element={<TherapistsPage />} />
             <Route path="setup/schedule" element={<SchedulePage />} />
             <Route path="setup/channels" element={<ChannelsPage />} />
-            <Route path="setup/payment-methods" element={<PaymentMethodsPage />} />
             <Route path="setup/discount-codes" element={<DiscountCodesPage />} />
             <Route path="setup/pay" element={<PaySettingsPage />} />
           </>
         )}
         {isAdmin && <Route path="setup/staff" element={<StaffPage />} />}
+        {isAdmin && <Route path="setup/accounts" element={<AccountsPage />} />}
+        {isAdmin && <Route path="setup/payment-methods" element={<Navigate to="/setup/accounts" replace />} />}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>

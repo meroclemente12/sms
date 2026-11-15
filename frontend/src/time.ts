@@ -103,3 +103,10 @@ export function peso(amount: string | number): string {
     Number(amount),
   )
 }
+
+/** Pesos with centavos, for the accounts. */
+export function pesoExact(amount: string | number): string {
+  return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', minimumFractionDigits: 2 }).format(
+    Number(amount),
+  )
+}

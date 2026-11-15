@@ -1674,3 +1674,74 @@ table.compact th {
   flex-wrap: wrap;
   margin-bottom: 8px;
 }
+
+/* --- Accounting --------------------------------------------------------------------- */
+
+.fund-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.fund-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-align: left;
+  color: var(--ink);
+}
+
+.fund-card.on {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.fund-amount {
+  font-size: 22px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.fund-amount.neg {
+  color: var(--danger);
+}
+
+.ledger-filters {
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.ledger-sum {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ledger-table tr.voided td {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.ledger-table tr.voided td .pill-void {
+  text-decoration: none;
+  display: inline-block;
+}
+
+.pill-void {
+  background: var(--st-cancelled-bg, var(--off));
+}
+
+.accounting-page .card-head {
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.accounting-page .segmented-buttons {
+  flex-wrap: wrap;
+}

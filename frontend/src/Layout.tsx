@@ -8,7 +8,6 @@ const SETUP_LINKS = [
   { to: '/setup/therapists', label: 'Therapists' },
   { to: '/setup/schedule', label: 'Shifts and time off' },
   { to: '/setup/channels', label: 'Booking channels' },
-  { to: '/setup/payment-methods', label: 'Payment methods' },
   { to: '/setup/discount-codes', label: 'Discount codes' },
   { to: '/setup/pay', label: 'Pay rules' },
 ]
@@ -24,7 +23,7 @@ function readSidebar(): boolean {
 }
 
 export default function Layout() {
-  const { me, branch, setBranchId, logout, isAdmin, canManage, isAccountant, canCheckPayments } = useAuth()
+  const { me, branch, setBranchId, logout, isAdmin, canManage, isAccountant, canCheckPayments, canDoAccounts } = useAuth()
   const [navOpen, setNavOpen] = useState(readSidebar)
   if (!me) return null
 
@@ -92,10 +91,12 @@ export default function Layout() {
                 Day board
               </NavLink>
               <NavLink to="/clients">Clients</NavLink>
+              <NavLink to="/petty-cash">Petty cash</NavLink>
             </>
           )}
           {canCheckPayments && <NavLink to="/payments">Payments</NavLink>}
           {canCheckPayments && <NavLink to="/pay">Therapist pay</NavLink>}
+          {canDoAccounts && <NavLink to="/accounting">Accounting</NavLink>}
           {canManage && (
             <>
               <p className="nav-group">Setup</p>
@@ -104,6 +105,7 @@ export default function Layout() {
                   {l.label}
                 </NavLink>
               ))}
+              {isAdmin && <NavLink to="/setup/accounts">Accounts and payment methods</NavLink>}
               {isAdmin && <NavLink to="/setup/staff">Staff accounts</NavLink>}
             </>
           )}
